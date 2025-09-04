@@ -1,27 +1,134 @@
-# controller.py
+# controller.py - MCP-Compatible Version
 
-# NEW: Import the Ollama library
 import ollama
 import requests
 import json
+from typing import Dict, Any, Optional, List
 
-# --- Configuration ---
-# The MCP Server URL is the only configuration we need now!
+# Configuration
 MCP_SERVER_URL = "http://localhost:3000"
-LOCAL_MODEL_NAME = 'llama3:8b-instruct-q4_0' # The model we are running locally
+LOCAL_MODEL_NAME = 'llama3:8b-instruct-q4_0'
 
-# The System Prompt is slightly adjusted for better reliability with local models.
+class MCPClient:
+    """A simple MCP client that communicates with our Pokemon MCP server"""
+    
+    def __init__(self, server_url: str):
+        self.server_url = server_url
+        self.initialized = False
+        self.request_id = 1
+    
+    def _make_request(self, method: str, params: Optional[Dict] = None) -> Dict[str, Any]:
+        """Make an MCP JSON-RPC request"""
+        payload = {
+            "jsonrpc": "2.0",
+            "method": method,
+            "id": self.request_id
+        }
+        
+        if params:
+            payload["params"] = params
+            
+        self.request_id += 1
+        
+        response = requests.post(f"{self.server_url}/mcp/{method.replace('.', '/')}", json=payload)
+        return response.json()
+    
+    def initialize(self) -> bool:
+        """Initialize the MCP connection"""
+        try:
+            result = self._make_request("initialize")
+            if "result" in result:
+                self.initialized = True
+                print("🔌 MCP connection initialized successfully")
+                return True
+            else:
+                print(f"❌ MCP initialization failed: {result.get('error', {}).get('message', 'Unknown error')}")
+                return False
+        except Exception as e:
+            print(f"❌ Failed to initialize MCP connection: {e}")
+            return False
+    
+    def list_resources(self) -> List[Dict]:
+        """List available MCP resources"""
+        if not self.initialized:
+            return []
+            
+        try:
+            result = self._make_request("resources.list")
+            if "result" in result:
+                return result["result"].get("resources", [])
+            return []
+        except Exception as e:
+            print(f"❌ Error listing resources: {e}")
+            return []
+    
+    def read_resource(self, uri: str) -> Optional[Dict]:
+        """Read a specific MCP resource"""
+        if not self.initialized:
+            return None
+            
+        try:
+            result = self._make_request("resources.read", {"uri": uri})
+            if "result" in result:
+                contents = result["result"].get("contents", [])
+                if contents:
+                    # Parse the JSON text content
+                    return json.loads(contents[0]["text"])
+            elif "error" in result:
+                print(f"❌ Resource error: {result['error']['message']}")
+            return None
+        except Exception as e:
+            print(f"❌ Error reading resource: {e}")
+            return None
+    
+    def list_tools(self) -> List[Dict]:
+        """List available MCP tools"""
+        if not self.initialized:
+            return []
+            
+        try:
+            result = self._make_request("tools.list")
+            if "result" in result:
+                return result["result"].get("tools", [])
+            return []
+        except Exception as e:
+            print(f"❌ Error listing tools: {e}")
+            return []
+    
+    def call_tool(self, name: str, arguments: Dict) -> Optional[str]:
+        """Call an MCP tool"""
+        if not self.initialized:
+            return None
+            
+        try:
+            result = self._make_request("tools.call", {"name": name, "arguments": arguments})
+            if "result" in result:
+                content = result["result"].get("content", [])
+                if content:
+                    return content[0]["text"]
+            elif "error" in result:
+                print(f"❌ Tool error: {result['error']['message']}")
+            return None
+        except Exception as e:
+            print(f"❌ Error calling tool: {e}")
+            return None
+
+# Enhanced system prompt for MCP operations
 SYSTEM_PROMPT = """
-You are an expert Pokémon assistant. Your job is to translate a user's natural language command into a structured JSON command.
-You have access to two tools:
-1. `get_pokemon_data`: Use this to get information about a single Pokémon. Requires: `name`. JSON format: {"tool": "get_pokemon_data", "name": "pokemon_name"}
-2. `simulate_battle`: Use this to simulate a battle between two Pokémon. Requires: `pokemon1`, `pokemon2`. JSON format: {"tool": "simulate_battle", "pokemon1": "pokemon_one_name", "pokemon2": "pokemon_two_name"}
-Based on the user's request, you must respond with ONLY the JSON command in a single line and nothing else.
+You are an expert Pokémon assistant with access to MCP (Model Context Protocol) resources and tools.
+
+Available operations:
+1. `get_pokemon_data`: Get detailed information about a single Pokémon
+   - Format: {"operation": "get_pokemon_data", "pokemon_name": "pokemon_name"}
+   
+2. `simulate_battle`: Simulate a battle between two Pokémon
+   - Format: {"operation": "simulate_battle", "pokemon1": "pokemon_one_name", "pokemon2": "pokemon_two_name"}
+
+Based on the user's request, respond with ONLY a JSON object containing the operation and required parameters.
 """
 
-# NEW: This function is updated to call the local model via Ollama
-def ask_local_model_for_command(user_prompt):
-    """Sends the user's request to the local model and gets back a JSON command."""
+def ask_local_model_for_command(user_prompt: str) -> Optional[Dict]:
+    """Ask the local model to interpret the user's command"""
     print(f"🧠 Asking local model ({LOCAL_MODEL_NAME}) to interpret the command...")
     try:
         response = ollama.chat(
@@ -30,7 +137,7 @@ def ask_local_model_for_command(user_prompt):
                 {'role': 'system', 'content': SYSTEM_PROMPT},
                 {'role': 'user', 'content': user_prompt},
             ],
-            options={'temperature': 0} # We want deterministic JSON output
+            options={'temperature': 0}
         )
         json_command_str = response['message']['content']
         return json.loads(json_command_str)
@@ -38,83 +145,128 @@ def ask_local_model_for_command(user_prompt):
         print(f"Error communicating with local model: {e}")
         return None
 
-# --- Replace the old execute_command function with this new one ---
-def execute_command(command):
-    """Executes the command and returns the raw result."""
-    tool = command.get("tool")
-    print(f"⚙️ Executing tool: {tool}...")
-
-    if tool == "get_pokemon_data":
-        name = command.get("name")
-        response = requests.get(f"{MCP_SERVER_URL}/resource/pokemon/{name}")
-        return response.json() # Return the full JSON data
-
-    elif tool == "simulate_battle":
-        p1 = command.get("pokemon1")
-        p2 = command.get("pokemon2")
-        body = {"pokemon1": p1, "pokemon2": p2}
-        response = requests.post(f"{MCP_SERVER_URL}/tool/battle-simulator", json=body)
-        battle_log_data = response.json()
-        return battle_log_data.get('battleLog', []) # Return the log list
-
-    else:
-        return {"error": "Unknown tool."}
-
-# NEW: A function to format the raw data into a human-friendly string.
-def present_results(result):
-    """Formats the raw data from the server into a nice string."""
-    if isinstance(result, list): # This is a battle log
-        print("\n--- Battle Report ---")
-        for line in result:
-            print(line)
+def execute_mcp_command(mcp_client: MCPClient, command: Dict) -> Optional[str]:
+    """Execute the command using MCP protocol"""
+    operation = command.get("operation")
+    print(f"⚙️ Executing MCP operation: {operation}")
     
-    elif isinstance(result, dict) and "name" in result: # This is Pokémon data
-        pokemon = result
-        name = pokemon['name'].capitalize()
-        types = " and ".join(pokemon['types']).capitalize()
-        evolves_to = pokemon['evolution'].get('evolvesTo')
+    if operation == "get_pokemon_data":
+        pokemon_name = command.get("pokemon_name")
+        if not pokemon_name:
+            return "Error: Pokemon name is required"
+            
+        # Use MCP resource to get Pokemon data
+        uri = f"pokemon://data/{pokemon_name.lower()}"
+        pokemon_data = mcp_client.read_resource(uri)
         
-        print(f"\n--- Pokémon Profile ---")
-        print(f"{name} is a {types} type Pokémon.")
-        
-        if evolves_to:
-            evolutions = ", ".join(evolves_to).capitalize()
-            print(f"It can evolve into: {evolutions}.")
+        if pokemon_data:
+            return format_pokemon_data(pokemon_data)
         else:
-            print("It is the final form in its evolution chain.")
-
-    else: # This is an error or unknown format
-        print(result)
-
-# --- Replace the old main loop with this new one ---
-if __name__ == "__main__":
-    print(f"✅ Pokémon AI Controller (using Local Model) is ready. Type your command or 'exit' to quit.")
-    while True:
-        user_input = input("> ")
-        if user_input.lower() == 'exit':
-            break
+            return f"Could not find data for Pokemon: {pokemon_name}"
+    
+    elif operation == "simulate_battle":
+        pokemon1 = command.get("pokemon1")
+        pokemon2 = command.get("pokemon2")
         
-        command = ask_local_model_for_command(user_input)
+        if not pokemon1 or not pokemon2:
+            return "Error: Both pokemon1 and pokemon2 are required"
         
-        if command:
-            # 1. Execute the command to get raw data
-            raw_result = execute_command(command)
-            # 2. Present the data in a friendly format
-            present_results(raw_result)
+        # Use MCP tool to simulate battle
+        battle_result = mcp_client.call_tool("battle_simulator", {
+            "pokemon1": pokemon1.lower(),
+            "pokemon2": pokemon2.lower()
+        })
+        
+        if battle_result:
+            return f"\n--- Battle Report ---\n{battle_result}"
+        else:
+            return f"Could not simulate battle between {pokemon1} and {pokemon2}"
+    
+    else:
+        return f"Unknown operation: {operation}"
 
-# --- Main Application Loop (updated to call the new local function) ---
-if __name__ == "__main__":
-    print(f"✅ Pokémon AI Controller (using Local Model) is ready. Type your command or 'exit' to quit.")
+def format_pokemon_data(pokemon: Dict) -> str:
+    """Format Pokemon data for display"""
+    name = pokemon['name'].capitalize()
+    types = " and ".join(pokemon['types']).capitalize()
+    
+    result = f"\n--- Pokémon Profile ---\n"
+    result += f"Name: {name}\n"
+    result += f"Type: {types}\n"
+    result += f"HP: {pokemon['stats']['hp']}\n"
+    result += f"Attack: {pokemon['stats']['attack']}\n"
+    result += f"Defense: {pokemon['stats']['defense']}\n"
+    result += f"Special Attack: {pokemon['stats']['specialAttack']}\n"
+    result += f"Special Defense: {pokemon['stats']['specialDefense']}\n"
+    result += f"Speed: {pokemon['stats']['speed']}\n"
+    result += f"Abilities: {', '.join(pokemon['abilities'])}\n"
+    
+    evolution = pokemon.get('evolution', {})
+    if evolution.get('evolvesTo'):
+        evolutions = ", ".join(evolution['evolvesTo']).capitalize()
+        result += f"Evolves to: {evolutions}\n"
+    else:
+        result += "This is the final form in its evolution chain.\n"
+    
+    return result
+
+def main():
+    """Main application loop"""
+    # Initialize MCP client
+    mcp_client = MCPClient(MCP_SERVER_URL)
+    
+    if not mcp_client.initialize():
+        print("❌ Failed to initialize MCP connection. Make sure the server is running.")
+        return
+    
+    # Show available resources and tools
+    print("\n📋 Available MCP Resources:")
+    resources = mcp_client.list_resources()
+    for resource in resources:
+        print(f"  - {resource['name']}: {resource.get('description', 'No description')}")
+    
+    print("\n🔧 Available MCP Tools:")
+    tools = mcp_client.list_tools()
+    for tool in tools:
+        print(f"  - {tool['name']}: {tool.get('description', 'No description')}")
+    
+    print(f"\n✅ Pokémon MCP Controller is ready! Type your command or 'exit' to quit.")
+    print("Example commands:")
+    print("  - 'who is snorlax' or 'tell me about pikachu'")
+    print("  - 'battle charizard and blastoise' or 'charizard vs blastoise'")
+    print("  - 'what are mewtwo stats' or 'eevee evolution info'")
+    
     while True:
-        user_input = input("> ")
-        if user_input.lower() == 'exit':
-            break
-
-        command = ask_local_model_for_command(user_input)
-
-        if command:
-            result = execute_command(command)
-            if isinstance(result, dict):
-                print(json.dumps(result, indent=2))
+        try:
+            user_input = input("\n> ").strip()
+            if user_input.lower() == 'exit':
+                break
+            
+            if not user_input:
+                continue
+                
+            # Get command from local model (with fallback parsing)
+            command = ask_local_model_for_command(user_input)
+            
+            if command:
+                print(f"📝 Parsed command: {command}")
+                # Execute using MCP
+                result = execute_mcp_command(mcp_client, command)
+                if result:
+                    print(result)
+                else:
+                    print("❌ No result returned from MCP operation")
             else:
-                print(result)
+                print("❌ Could not understand the command. Please try:")
+                print("   For Pokemon info: 'who is [pokemon]' or 'tell me about [pokemon]'")
+                print("   For battles: 'battle [pokemon1] and [pokemon2]' or '[pokemon1] vs [pokemon2]'")
+                
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}")
+    
+    print("\n👋 Goodbye!")
+
+if __name__ == "__main__":
+    main()

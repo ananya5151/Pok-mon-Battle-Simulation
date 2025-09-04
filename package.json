@@ -1,25 +1,61 @@
 {
-  "name": "pok-mon-battle-simulation",
-  "version": "1.0.0",
-  "main": "index.js",
+  "name": "pokemon-battle-mcp-server",
+  "version": "2.0.0",
+  "description": "MCP-compliant Pokemon Battle Simulation Server with AI integration",
+  "main": "dist/server.js",
   "scripts": {
-  "dev": "ts-node src/server.ts",
-  "build": "tsc -p .",
-  "start": "node dist/server.js",
-  "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "ts-node src/server.ts",
+    "build": "tsc -p .",
+    "start": "node dist/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "mcp:demo": "node example-mcp-client.js",
+    "mcp:init": "curl -X POST -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"id\":1}' http://localhost:3000/mcp/initialize"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ananya5151/Pok-mon-Battle-Simulation.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "pokemon",
+    "battle-simulation",
+    "ai",
+    "typescript",
+    "express"
+  ],
+  "author": "AI Engineer",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/ananya5151/Pok-mon-Battle-Simulation/issues"
   },
   "homepage": "https://github.com/ananya5151/Pok-mon-Battle-Simulation#readme",
-  "description": "",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "mcp": {
+    "protocol": "2024-11-05",
+    "capabilities": {
+      "resources": {
+        "subscribe": true,
+        "listChanged": true
+      },
+      "tools": {}
+    },
+    "resources": [
+      {
+        "uri": "pokemon://data",
+        "name": "Pokemon Data",
+        "description": "Comprehensive Pokemon data including stats, types, abilities, moves, and evolution information"
+      }
+    ],
+    "tools": [
+      {
+        "name": "battle_simulator",
+        "description": "Simulate a Pokemon battle between two Pokemon with detailed battle mechanics"
+      }
+    ]
+  },
   "devDependencies": {
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.0",
