@@ -13,11 +13,21 @@ export interface Pokemon {
   };
   types: string[];
   abilities: string[];
-  moves: string[];
+  moves: Move[];
   evolution: EvolutionInfo;
   sprites: {
     front_default: string | null;
   };
+}
+
+export interface Move {
+    name: string;
+    power: number | null;
+    type: string;
+    accuracy: number | null;
+    category: 'physical' | 'special' | 'status';
+    effect?: StatusEffect;
+    chance?: number;
 }
 
 export interface EvolutionInfo {

@@ -1,10 +1,27 @@
 // src/services/pokeapi.service.ts
 
 import axios from 'axios';
-import { Pokemon, EvolutionInfo } from '../pokemon.types';
+import { Pokemon, EvolutionInfo, Move } from '../pokemon.types';
 
 const API_BASE_URL = 'https://pokeapi.co/api/v2';
 const pokemonCache = new Map<string, Pokemon>();
+
+async function getMoveData(moveUrl: string): Promise<Move | null> {
+    try {
+        const response = await axios.get(moveUrl);
+        const moveData = response.data;
+        return {
+            name: moveData.name,
+            power: moveData.power,
+            type: moveData.type.name,
+            accuracy: moveData.accuracy,
+            category: moveData.damage_class.name,
+        };
+    } catch (error) {
+        console.error(`Failed to fetch move data from ${moveUrl}:`, error);
+        return null;
+    }
+}
 
 export async function getPokemonData(name: string): Promise<Pokemon | null> {
   const identifier = name.toLowerCase();
@@ -43,6 +60,9 @@ export async function getPokemonData(name: string): Promise<Pokemon | null> {
       const evolvesTo: string[] = nextMap.get(thisName) ?? [];
       evolution = { evolvesFrom, evolvesTo, chain: chainNames };
     }
+    
+    const movePromises = apiData.moves.slice(0, 20).map((m: any) => getMoveData(m.move.url));
+    const moves = (await Promise.all(movePromises)).filter((m): m is Move => m !== null);
 
     const pokemon: Pokemon = {
       id: apiData.id,
@@ -56,8 +76,8 @@ export async function getPokemonData(name: string): Promise<Pokemon | null> {
         speed: apiData.stats.find((s: any) => s.stat.name === 'speed').base_stat,
       },
       types: apiData.types.map((t: any) => t.type.name),
-      abilities: apiData.abilities.map((a: any) => a.ability.name),
-      moves: apiData.moves.map((m: any) => m.move.name),
+      abilities: apiData.abilities.map((a: any) => a.ability.name.replace(/-/g, ' ')),
+      moves,
       evolution,
       sprites: {
         front_default: apiData.sprites.front_default,

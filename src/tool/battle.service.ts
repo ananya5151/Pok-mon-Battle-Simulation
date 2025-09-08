@@ -1,15 +1,8 @@
 // src/tool/battle.service.ts
 
-import { Pokemon, StatusEffect } from '../pokemon.types';
+import { Pokemon, StatusEffect, Move } from '../pokemon.types';
 
 type TypeChart = { [key: string]: { [key: string]: number } };
-
-interface Move {
-  power: number;
-  type: string;
-  effect?: StatusEffect;
-  chance?: number;
-}
 
 const typeEffectiveness: TypeChart = {
     "normal": { "rock": 0.5, "ghost": 0, "steel": 0.5 }, "fire": { "fire": 0.5, "water": 0.5, "grass": 2, "ice": 2, "bug": 2, "rock": 0.5, "dragon": 0.5, "steel": 2 },
@@ -25,22 +18,24 @@ const typeEffectiveness: TypeChart = {
     "steel": { "fire": 0.5, "water": 0.5, "electric": 0.5, "ice": 2, "rock": 2, "steel": 0.5, "fairy": 2 }, "fairy": { "fire": 0.5, "fighting": 2, "poison": 0.5, "dragon": 2, "dark": 2, "steel": 0.5 }
 };
 
-const moveData: { [key: string]: Move } = {
-    'tackle': { power: 40, type: 'normal' }, 'ember': { power: 40, type: 'fire', effect: 'burn', chance: 0.1 },
-    'fire-punch': { power: 75, type: 'fire', effect: 'burn', chance: 0.1 }, 'flamethrower': { power: 90, type: 'fire', effect: 'burn', chance: 0.1 },
-    'water-gun': { power: 40, type: 'water' }, 'bubble-beam': { power: 65, type: 'water' },
-    'thunder-shock': { power: 40, type: 'electric', effect: 'paralysis', chance: 0.1 }, 'thunderbolt': { power: 90, type: 'electric', effect: 'paralysis', chance: 0.1 },
-    'ice-beam': { power: 90, type: 'ice', effect: 'freeze', chance: 0.1 }, 'blizzard': { power: 110, type: 'ice', effect: 'freeze', chance: 0.1 },
-    'wing-attack': { power: 60, type: 'flying' }, 'quick-attack': { power: 40, type: 'normal' },
-    'toxic': { power: 0, type: 'poison', effect: 'poison', chance: 0.9 }, 'thunder-wave': { power: 0, type: 'electric', effect: 'paralysis', chance: 0.9 },
-    'will-o-wisp': { power: 0, type: 'fire', effect: 'burn', chance: 0.85 }, 'spore': { power: 0, type: 'grass', effect: 'sleep', chance: 1.0 }
-};
-
 type BattlingPokemon = Pokemon & {
   currentHp: number;
   status: StatusEffect;
   statusTurns: number;
 };
+
+function getPokemonDetails(p: Pokemon): string[] {
+    const totalStats = p.stats.hp + p.stats.attack + p.stats.defense + p.stats.specialAttack + p.stats.specialDefense + p.stats.speed;
+    return [
+        `🏷️ **Type:** ${p.types.join(' / ')}`,
+        `📊 **Base Stats:**`,
+        `   ❤️ HP: ${p.stats.hp} | ⚔️ Atk: ${p.stats.attack} | 🛡️ Def: ${p.stats.defense}`,
+        `   🔮 SpA: ${p.stats.specialAttack} | ✨ SpD: ${p.stats.specialDefense} | 💨 Spd: ${p.stats.speed}`,
+        `   📈 **Total: ${totalStats}**`,
+        `⚡ **Abilities:** ${p.abilities.join(', ')}`,
+        `🥊 **Key Moves:** ${p.moves.filter(m => m.power && m.power > 50).slice(0, 4).map(m => m.name).join(', ')}`
+    ];
+}
 
 export function simulateBattle(pokemon1: Pokemon, pokemon2: Pokemon): string[] {
   const battleLog: string[] = [];
@@ -50,20 +45,23 @@ export function simulateBattle(pokemon1: Pokemon, pokemon2: Pokemon): string[] {
   battleLog.push("========================================");
   battleLog.push(`⚔️ BATTLE: ${p1.name.toUpperCase()} vs ${p2.name.toUpperCase()} ⚔️`);
   battleLog.push("========================================");
-  battleLog.push(`🔵 ${p1.name}: ${p1.stats.hp} HP | ${p1.types.join('/')}`);
-  battleLog.push(`🔴 ${p2.name}: ${p2.stats.hp} HP | ${p2.types.join('/')}`);
-  if (p1.stats.speed > p2.stats.speed) battleLog.push(`⚡ Speed Advantage: ${p1.name} will attack first!`);
-  else battleLog.push(`⚡ Speed Advantage: ${p2.name} will attack first!`);
+  battleLog.push(`\n🔵 **${p1.name.toUpperCase()}** (#${p1.id})`);
+  battleLog.push(...getPokemonDetails(p1).map(s => `   ${s}`));
+  battleLog.push(`\n🔴 **${p2.name.toUpperCase()}** (#${p2.id})`);
+  battleLog.push(...getPokemonDetails(p2).map(s => `   ${s}`));
   
-  handleEntryAbilities(p1, p2, battleLog);
-  handleEntryAbilities(p2, p1, battleLog);
+  if (p1.stats.speed > p2.stats.speed) battleLog.push(`\n⚡ **Speed Advantage:** ${p1.name} is faster and will attack first!`);
+  else if (p2.stats.speed > p1.stats.speed) battleLog.push(`\n⚡ **Speed Advantage:** ${p2.name} is faster and will attack first!`);
+  else battleLog.push(`\n⚡ **Speed Tie:** Both Pokémon have the same speed!`);
   
   battleLog.push("\n--- BATTLE BEGINS! ---\n");
 
   let turn = 1;
   while (p1.currentHp > 0 && p2.currentHp > 0) {
     battleLog.push(`--- Turn ${turn} ---`);
-    battleLog.push(`${p1.name}: ${Math.round(p1.currentHp)}/${p1.stats.hp} HP | ${p2.name}: ${Math.round(p2.currentHp)}/${p2.stats.hp} HP`);
+    const hpBar = (p: BattlingPokemon) => `[${'█'.repeat(Math.ceil(p.currentHp/p.stats.hp*10))}${' '.repeat(10-Math.ceil(p.currentHp/p.stats.hp*10))}]`;
+    battleLog.push(`${p1.name}: ${hpBar(p1)} ${Math.round(p1.currentHp)}/${p1.stats.hp} HP ${p1.status ? `(${p1.status})` : ''}`);
+    battleLog.push(`${p2.name}: ${hpBar(p2)} ${Math.round(p2.currentHp)}/${p2.stats.hp} HP ${p2.status ? `(${p2.status})` : ''}`);
 
     const [first, second] = p1.stats.speed >= p2.stats.speed ? [p1, p2] : [p2, p1];
 
@@ -79,56 +77,62 @@ export function simulateBattle(pokemon1: Pokemon, pokemon2: Pokemon): string[] {
 
     battleLog.push("");
     turn++;
-    if (turn > 50) { battleLog.push("The battle is too long! It's a draw!"); break; }
+    if (turn > 50) { battleLog.push("The battle timed out! It's a draw!"); break; }
   }
 
   const winner = p1.currentHp > 0 ? p1 : p2;
   const loser = winner === p1 ? p2 : p1;
-  battleLog.push(`${loser.name} has fainted!`);
+  battleLog.push(`\n💀 ${loser.name} has fainted!`);
   battleLog.push(`\n--- 🏆 ${winner.name.toUpperCase()} WINS THE BATTLE! ---`);
   
   battleLog.push("\n========================================");
   battleLog.push("🧠 STRATEGIC ANALYSIS");
   battleLog.push("========================================");
-  if (winner.stats.speed > loser.stats.speed) battleLog.push(`• Speed was a key factor, allowing ${winner.name} to control the battle's pace.`);
-  if (didHaveTypeAdvantage(winner, loser)) battleLog.push(`• ${winner.name} exploited a type advantage against ${loser.name}.`);
-  battleLog.push(`• With ${Math.round(winner.currentHp)} HP remaining, ${winner.name} secured a decisive victory.`);
+  if (winner.stats.speed > loser.stats.speed) battleLog.push(`• **Speed Kills:** ${winner.name}'s superior speed (${winner.stats.speed} vs ${loser.stats.speed}) was a decisive factor, allowing it to dictate the pace of the battle.`);
+  if (didHaveTypeAdvantage(winner, loser)) battleLog.push(`• **Type Mastery:** ${winner.name} effectively exploited a type advantage against ${loser.name}, dealing massive damage with super-effective moves.`);
+  battleLog.push(`• **Decisive Victory:** With ${Math.round(winner.currentHp)} HP remaining, ${winner.name} proved its dominance in this matchup.`);
 
   return battleLog;
 }
 
 function performTurn(attacker: BattlingPokemon, defender: BattlingPokemon, battleLog: string[]) {
-  if (attacker.status === 'paralysis' && Math.random() < 0.25) { battleLog.push(`⚡ ${attacker.name} is fully paralyzed and can't move!`); return; }
+  if (attacker.status === 'paralysis' && Math.random() < 0.25) { battleLog.push(`   ⚡ ${attacker.name} is fully paralyzed and can't move!`); return; }
   if (attacker.status === 'sleep') {
-    if (attacker.statusTurns > 0) { battleLog.push(`😴 ${attacker.name} is fast asleep.`); attacker.statusTurns--; return; }
-    battleLog.push(`☀️ ${attacker.name} woke up!`); attacker.status = null;
+    if (attacker.statusTurns > 0) { battleLog.push(`   😴 ${attacker.name} is fast asleep.`); attacker.statusTurns--; return; }
+    battleLog.push(`   ☀️ ${attacker.name} woke up!`); attacker.status = null;
   }
   if (attacker.status === 'freeze') {
-    if (Math.random() < 0.2) { battleLog.push(`🧊 ${attacker.name} thawed out!`); attacker.status = null; } 
-    else { battleLog.push(`🥶 ${attacker.name} is frozen solid!`); return; }
+    if (Math.random() < 0.2) { battleLog.push(`   🧊 ${attacker.name} thawed out!`); attacker.status = null; } 
+    else { battleLog.push(`   🥶 ${attacker.name} is frozen solid!`); return; }
   }
 
-  const { moveName, move } = selectMove(attacker, defender);
+  const move = selectMove(attacker, defender);
+  if (!move) { battleLog.push(`   ${attacker.name} is out of moves!`); return; }
 
-  if (defender.abilities.includes('levitate') && move.type === 'ground') { battleLog.push(`✨ ${defender.name}'s Levitate made the attack miss!`); return; }
-  if (defender.abilities.includes('flash-fire') && move.type === 'fire') { battleLog.push(`🔥 ${defender.name}'s Flash Fire absorbed the attack!`); return; }
+  battleLog.push(`   🎯 ${attacker.name} used ${move.name.replace(/-/g, ' ')}!`);
   
-  battleLog.push(`🎯 ${attacker.name} used ${moveName}!`);
+  if ((move.accuracy || 101) <= 100 && Math.random() > (move.accuracy || 100) / 100) {
+      battleLog.push(`   💨 The attack missed!`);
+      return;
+  }
 
-  if (move.power > 0) {
+  if (move.power && move.power > 0) {
     const { damage, effectiveness, isCritical } = calculateDamage(attacker, defender, move);
-    if (isCritical) battleLog.push("💥 A critical hit!");
+    if (isCritical) battleLog.push("   💥 A critical hit!");
+    
+    let effectivenessText = '';
+    if (effectiveness > 1) effectivenessText = " (It's super effective!)";
+    if (effectiveness < 1 && effectiveness > 0) effectivenessText = " (It's not very effective...)";
+    if (effectiveness === 0) effectivenessText = " (It had no effect!)";
+
     defender.currentHp = Math.max(0, defender.currentHp - damage);
-    if (effectiveness > 1) battleLog.push("🔥 It's super effective!");
-    if (effectiveness < 1 && effectiveness > 0) battleLog.push("🛡️ It's not very effective...");
-    if (effectiveness === 0) battleLog.push("❌ It had no effect!");
-    battleLog.push(`💥 It dealt ${damage} damage to ${defender.name}. (${Math.round(defender.currentHp)} HP left)`);
+    battleLog.push(`   💥 It dealt ${damage} damage to ${defender.name}.${effectivenessText}`);
   }
 
   if (move.effect && defender.status === null && move.chance && Math.random() < move.chance) {
     defender.status = move.effect;
     if (move.effect === 'sleep') defender.statusTurns = Math.floor(Math.random() * 3) + 1;
-    battleLog.push(`✨ ${defender.name} is now ${move.effect}!`);
+    battleLog.push(`   ✨ ${defender.name} is now ${move.effect}!`);
   }
 }
 
@@ -136,59 +140,76 @@ function applyEndOfTurnStatus(pokemon: BattlingPokemon, battleLog: string[]) {
     if (pokemon.status === 'burn') {
         const damage = Math.floor(pokemon.stats.hp / 16);
         pokemon.currentHp = Math.max(0, pokemon.currentHp - damage);
-        battleLog.push(`🔥 ${pokemon.name} is hurt by its burn! (${damage} damage)`);
+        battleLog.push(`   🔥 ${pokemon.name} is hurt by its burn! (${damage} damage)`);
     }
     if (pokemon.status === 'poison') {
         const damage = Math.floor(pokemon.stats.hp / 8);
         pokemon.currentHp = Math.max(0, pokemon.currentHp - damage);
-        battleLog.push(`☠️ ${pokemon.name} is hurt by poison! (${damage} damage)`);
+        battleLog.push(`   ☠️ ${pokemon.name} is hurt by poison! (${damage} damage)`);
     }
 }
 
 function calculateDamage(attacker: BattlingPokemon, defender: BattlingPokemon, move: Move): { damage: number, effectiveness: number, isCritical: boolean } {
   const LEVEL = 50;
-  let attack = attacker.stats.attack;
-  if (attacker.status === 'burn') attack /= 2;
-  const defense = defender.stats.defense;
-  let baseDamage = ((((2 * LEVEL / 5 + 2) * move.power * (attack / defense)) / 50) + 2);
+  if (!move.power) return { damage: 0, effectiveness: 1, isCritical: false };
+  
+  let attackStat: number;
+  let defenseStat: number;
+
+  if (move.category === 'physical') {
+      attackStat = attacker.stats.attack;
+      defenseStat = defender.stats.defense;
+      if (attacker.status === 'burn') attackStat /= 2;
+  } else if (move.category === 'special') {
+      attackStat = attacker.stats.specialAttack;
+      defenseStat = defender.stats.specialDefense;
+  } else {
+      return { damage: 0, effectiveness: 1, isCritical: false };
+  }
+
+  let baseDamage = (((2 * LEVEL / 5 + 2) * move.power * (attackStat / defenseStat)) / 50) + 2;
+  
   const isCritical = Math.random() < (1 / 24);
   if (isCritical) baseDamage *= 1.5;
-  if (attacker.types.includes(move.type)) baseDamage *= 1.5;
+  
+  if (attacker.types.includes(move.type)) baseDamage *= 1.5; // STAB
+  
   let effectiveness = 1;
   defender.types.forEach(defenseType => { effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1; });
   baseDamage *= effectiveness;
-  baseDamage *= (Math.random() * (1.0 - 0.85) + 0.85);
+  
+  baseDamage *= (Math.random() * (1.0 - 0.85) + 0.85); // Random factor
+  
   const finalDamage = Math.max(1, Math.floor(baseDamage));
   return { damage: finalDamage, effectiveness, isCritical };
 }
 
-function handleEntryAbilities(pokemon: BattlingPokemon, opponent: BattlingPokemon, battleLog: string[]) {
-    if (pokemon.abilities.includes('intimidate')) {
-        battleLog.push(`😱 ${pokemon.name}'s Intimidate lowered ${opponent.name}'s Attack!`);
-    }
-}
+function selectMove(attacker: BattlingPokemon, defender: BattlingPokemon): Move | null {
+    const attackingMoves = attacker.moves.filter(m => m.power && m.power > 0);
+    if (attackingMoves.length === 0) return null;
 
-function selectMove(attacker: BattlingPokemon, defender: BattlingPokemon): { moveName: string; move: Move } {
-    const availableMoves = attacker.moves.map(name => ({ name, data: moveData[name] })).filter(m => m.data);
-    if (availableMoves.length === 0) return { moveName: 'struggle', move: { power: 50, type: 'normal' } };
-    let bestMove = availableMoves[0];
+    let bestMove: Move | null = null;
     let maxScore = -1;
-    for (const potentialMove of availableMoves) {
-        let score = 0;
-        if (potentialMove.data.power > 0) {
-            let effectiveness = 1;
-            defender.types.forEach(defenseType => { effectiveness *= typeEffectiveness[potentialMove.data.type]?.[defenseType] ?? 1; });
-            score = potentialMove.data.power * effectiveness;
-        } else if (potentialMove.data.effect && defender.status === null) { score = 40; }
-        if (score > maxScore) { maxScore = score; bestMove = potentialMove; }
+
+    for (const move of attackingMoves) {
+        let effectiveness = 1;
+        defender.types.forEach(defenseType => {
+            effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1;
+        });
+        
+        const score = (move.power || 0) * effectiveness * ((move.accuracy || 100) / 100);
+        
+        if (score > maxScore) {
+            maxScore = score;
+            bestMove = move;
+        }
     }
-    return { moveName: bestMove.name, move: bestMove.data };
+    return bestMove || attackingMoves[0];
 }
 
 function didHaveTypeAdvantage(winner: Pokemon, loser: Pokemon): boolean {
-    for (const moveName of winner.moves) {
-        const move = moveData[moveName];
-        if (move && move.power > 0) {
+    for (const move of winner.moves) {
+        if (move && move.power && move.power > 0) {
             let effectiveness = 1;
             loser.types.forEach(defenseType => { effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1; });
             if (effectiveness > 1) return true;
