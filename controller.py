@@ -59,8 +59,8 @@ class MCPClient:
             print(f"❌ Error listing resources: {e}")
             return []
     
-    def read_resource(self, uri: str) -> Optional[Dict]:
-        """Read a specific MCP resource"""
+    def read_resource(self, uri: str) -> Optional[str]:
+        """Read a specific MCP resource (returns raw text)"""
         if not self.initialized:
             return None
             
@@ -69,8 +69,7 @@ class MCPClient:
             if "result" in result:
                 contents = result["result"].get("contents", [])
                 if contents:
-                    # Parse the JSON text content
-                    return json.loads(contents[0]["text"])
+                    return contents[0]["text"]
             elif "error" in result:
                 print(f"❌ Resource error: {result['error']['message']}")
             return None
@@ -111,50 +110,72 @@ class MCPClient:
             return None
 
 class ClaudeCommandParser:
-    """Parse user commands using pattern matching (Claude-inspired logic)"""
-    
+    """Parse user commands using intent keywords and scoring"""
+
     def __init__(self):
-        # Pokemon info patterns
-        self.info_patterns = [
-            r"(?:who is|tell me about|what is|info (?:about|on)|stats? (?:for|of)|data (?:for|on)|(?:what are|show me) .+? stats?)\s+(\w+)",
-            r"(\w+)(?:'s)?\s+(?:stats?|info|data|details)",
-            r"(?:show|get|find)\s+(\w+)(?:\s+(?:info|data|stats?))?",
-        ]
-        
-        # Battle patterns  
-        self.battle_patterns = [
-            r"(?:battle|fight)\s+(\w+)\s+(?:and|vs|against|with)\s+(\w+)",
-            r"(\w+)\s+(?:vs|versus|against)\s+(\w+)",
-            r"(?:let.s see|simulate)\s+(\w+)\s+(?:and|vs|fight|battle)\s+(\w+)",
-        ]
-    
+        # Keywords are more flexible than rigid patterns
+        self.info_keywords = ['info', 'stats', 'about', 'who is', 'tell me', 'show']
+        self.battle_keywords = ['battle', 'fight', 'vs', 'versus', 'simulate', 'who would win']
+        self.moves_keywords = ['moves', 'can learn', 'learn', 'list moves', 'show moves']
+        self.type_keywords = ['effective', 'weak', 'weakness', 'resist', 'type', 'super effective', 'not very effective']
+
     def parse_command(self, user_input: str) -> Optional[Dict]:
-        """Parse user input into structured commands"""
-        user_input = user_input.lower().strip()
-        user_input = re.sub(r'[?!.]+$', '', user_input)  # Remove trailing punctuation
-        
-        # Try Pokemon info patterns
-        for pattern in self.info_patterns:
-            match = re.search(pattern, user_input)
-            if match:
-                pokemon_name = match.group(1)
-                return {
-                    "operation": "get_pokemon_data", 
-                    "pokemon_name": pokemon_name
-                }
-        
-        # Try battle patterns
-        for pattern in self.battle_patterns:
-            match = re.search(pattern, user_input)
-            if match:
-                pokemon1 = match.group(1)
-                pokemon2 = match.group(2)
-                return {
-                    "operation": "simulate_battle",
-                    "pokemon1": pokemon1,
-                    "pokemon2": pokemon2
-                }
-        
+        """Parse user input by identifying keywords and extracting Pokémon names."""
+        user_input_lower = user_input.lower().strip()
+        words = re.split(r'\s|vs|versus', user_input_lower) # Split by space or vs
+        words = [w.strip(".,?!") for w in words if w] # Clean up words
+
+        # --- Intent Scoring ---
+        info_score = sum(1 for keyword in self.info_keywords if keyword in user_input_lower)
+        battle_score = sum(1 for keyword in self.battle_keywords if keyword in user_input_lower)
+        moves_score = sum(1 for keyword in self.moves_keywords if keyword in user_input_lower)
+        type_score = sum(1 for keyword in self.type_keywords if keyword in user_input_lower)
+
+        # --- Identify Pokémon Names ---
+        expanded_stops = ['and','between','the','a','an','to','for','with','vs','versus','that',
+                          'tell','me','about','who','is','would','win','simulate','fight','battle',
+                          'list','show','moves','can','learn','effective','weak','weakness','resist','type','super','not','very','against','what','are']
+        split_keywords = []
+        for kw in (self.info_keywords + self.battle_keywords + self.moves_keywords + self.type_keywords):
+            split_keywords.extend(kw.split())
+        all_keywords = set(self.info_keywords + self.battle_keywords + self.moves_keywords + self.type_keywords + split_keywords + expanded_stops)
+
+        pokemon_names = [
+            word for word in words
+            if word not in all_keywords and len(word) > 2
+        ]
+
+        # Extract optional numeric limit (e.g., "list 10 moves")
+        limit = None
+        m = re.search(r"list\s+(\d+)", user_input_lower)
+        if m:
+            try:
+                limit = int(m.group(1))
+            except:
+                limit = None
+
+        # --- Decide Operation ---
+        if battle_score > 0 and len(pokemon_names) >= 2:
+            return {"operation": "simulate_battle", "pokemon1": pokemon_names[0], "pokemon2": pokemon_names[1]}
+        if moves_score > 0 and len(pokemon_names) >= 1:
+            # Prefer the last meaningful token (handles phrases like 'moves that X can learn')
+            pokemon = pokemon_names[-1]
+            return {"operation": "list_moves", "pokemon_name": pokemon, "limit": limit}
+        if info_score > 0 and len(pokemon_names) >= 1:
+            return {"operation": "get_pokemon_data", "pokemon_name": pokemon_names[0]}
+        if type_score > 0:
+            # Try to extract types appearing after 'against' or in the query
+            types_found = [w for w in words if w not in all_keywords and len(w) > 2]
+            if len(types_found) >= 1:
+                # default to same attacking/defending type if only one provided
+                attacking = types_found[0]
+                defending = types_found[1:2] if len(types_found) > 1 else [types_found[0]]
+                return {"operation": "type_effectiveness", "attacking_type": attacking, "defending_types": defending}
+
+        # Fallback for simple name queries like "pikachu"
+        if len(pokemon_names) == 1 and battle_score == 0 and info_score == 0 and moves_score == 0 and type_score == 0:
+            return {"operation": "get_pokemon_data", "pokemon_name": pokemon_names[0]}
+
         return None
 
 def execute_mcp_command(mcp_client: MCPClient, command: Dict) -> Optional[str]:
@@ -166,34 +187,37 @@ def execute_mcp_command(mcp_client: MCPClient, command: Dict) -> Optional[str]:
         pokemon_name = command.get("pokemon_name")
         if not pokemon_name:
             return "Error: Pokemon name is required"
-            
-        # Use MCP resource to get Pokemon data
         uri = f"pokemon://data/{pokemon_name.lower()}"
-        pokemon_data = mcp_client.read_resource(uri)
-        
-        if pokemon_data:
-            return format_pokemon_data(pokemon_data)
-        else:
-            return f"Could not find data for Pokemon: {pokemon_name}"
-    
+        text = mcp_client.read_resource(uri)
+        return text or f"Could not find data for Pokemon: {pokemon_name}"
+
     elif operation == "simulate_battle":
         pokemon1 = command.get("pokemon1")
         pokemon2 = command.get("pokemon2")
-        
         if not pokemon1 or not pokemon2:
             return "Error: Both pokemon1 and pokemon2 are required"
-        
-        # Use MCP tool to simulate battle
-        battle_result = mcp_client.call_tool("battle_simulator", {
-            "pokemon1": pokemon1.lower(),
-            "pokemon2": pokemon2.lower()
-        })
-        
-        if battle_result:
-            return f"\n--- Battle Report ---\n{battle_result}"
-        else:
-            return f"Could not simulate battle between {pokemon1} and {pokemon2}"
-    
+        battle_result = mcp_client.call_tool("battle_simulator", {"pokemon1": pokemon1.lower(), "pokemon2": pokemon2.lower()})
+        return f"\n--- Battle Report ---\n{battle_result}" if battle_result else f"Could not simulate battle between {pokemon1} and {pokemon2}"
+
+    elif operation == "list_moves":
+        pokemon_name = command.get("pokemon_name")
+        limit = command.get("limit")
+        if not pokemon_name:
+            return "Error: Pokemon name is required"
+        args = {"name": pokemon_name.lower()}
+        if isinstance(limit, int) and limit > 0:
+            args["limit"] = limit
+        result = mcp_client.call_tool("list_moves", args)
+        return result or f"Could not list moves for {pokemon_name}"
+
+    elif operation == "type_effectiveness":
+        attacking = command.get("attacking_type")
+        defending = command.get("defending_types") or []
+        if not attacking or not defending:
+            return "Error: Need attacking_type and at least one defending type"
+        result = mcp_client.call_tool("get_type_effectiveness", {"attacking_type": attacking, "defending_types": defending})
+        return result or "Could not compute type effectiveness"
+
     else:
         return f"Unknown operation: {operation}"
 

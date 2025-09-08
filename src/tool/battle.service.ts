@@ -63,7 +63,16 @@ export function simulateBattle(pokemon1: Pokemon, pokemon2: Pokemon): string[] {
   let p1: BattlingPokemon = { ...pokemon1, currentHp: pokemon1.stats.hp, status: null };
   let p2: BattlingPokemon = { ...pokemon2, currentHp: pokemon2.stats.hp, status: null };
 
-  battleLog.push(`--- Battle Start: ${p1.name} vs. ${p2.name}! ---`);
+  // 1. Pre-Battle Summary
+  battleLog.push("========================================");
+  battleLog.push(`⚔️ BATTLE: ${p1.name.toUpperCase()} vs ${p2.name.toUpperCase()} ⚔️`);
+  battleLog.push("========================================");
+  if (p1.stats.speed > p2.stats.speed) {
+    battleLog.push(`⚡ Speed Advantage: ${p1.name} will attack first!`);
+  } else {
+    battleLog.push(`⚡ Speed Advantage: ${p2.name} will attack first!`);
+  }
+  battleLog.push("\n--- BATTLE BEGINS! ---\n");
 
   let turn = 1;
   while (p1.currentHp > 0 && p2.currentHp > 0) {
@@ -88,7 +97,14 @@ export function simulateBattle(pokemon1: Pokemon, pokemon2: Pokemon): string[] {
   const winner = p1.currentHp > 0 ? p1 : p2;
   const loser = winner === p1 ? p2 : p1;
   battleLog.push(`${loser.name} has fainted!`);
-  battleLog.push(`--- ${winner.name.toUpperCase()} wins the battle! ---`);
+  battleLog.push(`\n--- ${winner.name.toUpperCase()} WINS THE BATTLE! ---`);
+  battleLog.push("\n========================================");
+  battleLog.push("🧠 STRATEGIC ANALYSIS");
+  battleLog.push("========================================");
+  if (winner.stats.speed > loser.stats.speed) {
+      battleLog.push(`• The winner's higher speed was a key factor, allowing it to control the pace of the battle.`);
+  }
+  battleLog.push(`• The winner's strategic use of its moves and type advantages secured the victory.`);
 
   return battleLog;
 }
@@ -103,10 +119,8 @@ function performTurn(attacker: BattlingPokemon, defender: BattlingPokemon, battl
     }
   }
 
-  // Pick a random, known move from our simplified move list.
-  const availableMoves = attacker.moves.filter(move => moveData[move]);
-  const moveName = availableMoves.length > 0 ? availableMoves[Math.floor(Math.random() * availableMoves.length)] : 'tackle';
-  const move = moveData[moveName];
+  // Intelligent move selection
+  const { moveName, move } = selectMove(attacker, defender);
 
   battleLog.push(`${attacker.name} used ${moveName}!`);
 
@@ -140,30 +154,74 @@ function performTurn(attacker: BattlingPokemon, defender: BattlingPokemon, battl
  * Calculates the damage one Pokémon does to another with a specific move.
  */
 function calculateDamage(attacker: BattlingPokemon, defender: BattlingPokemon, move: Move): number {
-  const LEVEL = 50;
+  const LEVEL = 50; // Standard competitive level
   let attack = attacker.stats.attack;
 
-  // NEW: Burn halves the Attack stat.
   if (attacker.status === 'burn') {
     attack /= 2;
   }
 
   const defense = defender.stats.defense;
+
+  // --- Start of New Formula ---
   let damage = (((2 * LEVEL / 5 + 2) * move.power * (attack / defense)) / 50) + 2;
 
+  // 1. Add STAB (Same Type Attack Bonus)
+  if (attacker.types.includes(move.type)) {
+    damage *= 1.5;
+  }
+
+  // 2. Type Effectiveness (Your existing logic is good)
   let effectiveness = 1;
   const attackType = move.type;
   if (typeEffectiveness[attackType]) {
     defender.types.forEach(defenseType => {
-        if (typeEffectiveness[attackType][defenseType] !== undefined) {
-            effectiveness *= typeEffectiveness[attackType][defenseType];
-        }
+      if (typeEffectiveness[attackType][defenseType] !== undefined) {
+        effectiveness *= typeEffectiveness[attackType][defenseType];
+      }
     });
   }
-
-  if (effectiveness > 1) console.log("It's super effective!");
-  if (effectiveness < 1 && effectiveness > 0) console.log("It's not very effective...");
-
   damage *= effectiveness;
-  return Math.floor(damage);
+
+  // 3. Add Random Variance (85% to 100%)
+  const randomFactor = Math.random() * (1.0 - 0.85) + 0.85;
+  damage *= randomFactor;
+  // --- End of New Formula ---
+
+  // Return final damage, ensuring it's at least 1
+  return Math.max(1, Math.floor(damage));
+}
+
+// Intelligent move selection prioritizing effectiveness and power
+function selectMove(attacker: BattlingPokemon, defender: BattlingPokemon): { moveName: string; move: Move } {
+  const availableMoves = attacker.moves
+    .map(name => ({ name, data: moveData[name] }))
+    .filter(m => m.data && m.data.power > 0); // Only consider damaging moves
+
+  if (availableMoves.length === 0) {
+    // Fallback if no damaging moves are known
+    return { moveName: 'tackle', move: moveData['tackle'] };
+  }
+
+  let bestMove = availableMoves[0];
+  let maxScore = 0;
+
+  for (const potentialMove of availableMoves) {
+    let effectiveness = 1;
+    const attackType = potentialMove.data.type;
+    defender.types.forEach(defenseType => {
+      if (typeEffectiveness[attackType]?.[defenseType] !== undefined) {
+        effectiveness *= typeEffectiveness[attackType][defenseType];
+      }
+    });
+
+    // Score is based on effectiveness first, then power
+    const moveScore = (potentialMove.data.power || 0) * effectiveness;
+
+    if (moveScore > maxScore) {
+      maxScore = moveScore;
+      bestMove = { name: potentialMove.name, data: potentialMove.data } as any;
+    }
+  }
+  return { moveName: (bestMove as any).name, move: (bestMove as any).data };
 }
