@@ -23,7 +23,6 @@ class BattleSimulator {
         this.p1 = { ...pokemon1, currentHp: pokemon1.stats.hp, status: null };
         this.p2 = { ...pokemon2, currentHp: pokemon2.stats.hp, status: null };
     }
-    // --- NEW: A dedicated method to handle end-of-turn status effects ---
     processStatusEffects(pokemon) {
         if (!pokemon.status)
             return;
@@ -40,16 +39,14 @@ class BattleSimulator {
                 break;
             case 'sleep':
                 pokemon.status.turns++;
-                if (pokemon.status.turns >= 3) { // Wake up after a few turns
+                if (pokemon.status.turns >= 3) {
                     this.battleLog.push(`   😴 ${pokemon.name} woke up!`);
                     pokemon.status = null;
                 }
                 break;
         }
     }
-    // --- UPDATED: Turn logic now checks for more statuses and applies move effects ---
     performTurn(attacker, defender) {
-        // Check if status prevents moving
         if (attacker.status) {
             if (attacker.status.name === 'paralysis' && Math.random() < 0.25) {
                 this.battleLog.push(`   ⚡ ${attacker.name} is fully paralyzed and can't move!`);
@@ -78,7 +75,6 @@ class BattleSimulator {
         const moveName = move.name.replace(/-/g, ' ');
         this.battleLog.push(`\n**${attacker.name}'s Turn:**`);
         this.battleLog.push(`   🎯 ${attacker.name} used **${moveName}**!`);
-        // --- NEW: Detailed accuracy roll logging ---
         const accuracyRoll = Math.random();
         if ((move.accuracy || 101) <= 100 && accuracyRoll > (move.accuracy || 100) / 100) {
             this.battleLog.push(`   🎲 Accuracy Roll: FAILED - The attack missed!`);
@@ -111,7 +107,6 @@ class BattleSimulator {
             this.battleLog.push(`   💥 Dealt **${finalDamage} damage**!`);
             this.battleLog.push(`   📉 ${defender.name}'s HP: ${oldHp} → ${defender.currentHp}`);
         }
-        // --- NEW: Apply status effect from the move ---
         if (defender.currentHp > 0 && move.effect && move.chance && !defender.status) {
             if (Math.random() < move.chance) {
                 defender.status = { name: move.effect, turns: 0 };
@@ -119,14 +114,12 @@ class BattleSimulator {
             }
         }
     }
-    // --- NEW: Added detailed breakdown logging ---
     calculateDamage(attacker, defender, move) {
         if (!move.power)
             return { damage: 0, effectiveness: 1 };
         let attackStat, defenseStat;
         if (move.category === 'physical') {
             attackStat = attacker.stats.attack;
-            // Burn halves physical attack
             if (attacker.status?.name === 'burn')
                 attackStat /= 2;
             defenseStat = defender.stats.defense;
@@ -144,7 +137,6 @@ class BattleSimulator {
         baseDamage *= effectiveness;
         const randomFactor = Math.random() * (config_1.config.battle.randomFactor.max - config_1.config.battle.randomFactor.min) + config_1.config.battle.randomFactor.min;
         baseDamage *= randomFactor;
-        // --- NEW: Log the calculation details ---
         this.battleLog.push(`   🧮 Damage Calculation: (Power: ${move.power}, Atk: ${Math.round(attackStat)}, Def: ${Math.round(defenseStat)}, STAB: ${isStab}, Type Mod: x${effectiveness})`);
         const finalDamage = Math.max(1, Math.floor(baseDamage));
         return { damage: finalDamage, effectiveness };
@@ -166,7 +158,6 @@ class BattleSimulator {
                 effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1;
             });
         }
-        // Give a small boost to moves that can apply status effects
         const statusBonus = (move.effect && !defender.status) ? 20 : 0;
         return (move.power || 0) * effectiveness * ((move.accuracy || 100) / 100) + statusBonus;
     }
@@ -193,7 +184,6 @@ class BattleSimulator {
                 this.battleLog.push(`\n💀 ${first.name} has fainted!`);
                 break;
             }
-            // --- NEW: Process end-of-turn status effects for both Pokémon ---
             this.battleLog.push("\n**End of Turn Effects:**");
             if (this.p1.currentHp > 0)
                 this.processStatusEffects(this.p1);
@@ -221,7 +211,7 @@ class BattleSimulator {
         this.battleLog.push(`\n🔴 **${this.p2.name.toUpperCase()}** (#${this.p2.id})`);
         if (this.p1.stats.speed > this.p2.stats.speed)
             this.battleLog.push(`\n⚡ **Speed Advantage:** ${this.p1.name} is faster and will attack first!`);
-        else if (this.p2.stats.speed > this.p1.stats.speed)
+        else if (this.p2.stats.speed > this.p2.stats.speed)
             this.battleLog.push(`\n⚡ **Speed Advantage:** ${this.p2.name} is faster and will attack first!`);
         else
             this.battleLog.push(`\n⚡ **Speed Tie:** Both Pokémon have the same speed!`);

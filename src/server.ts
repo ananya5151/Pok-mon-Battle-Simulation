@@ -2,7 +2,7 @@
 
 import * as readline from 'readline';
 import { getPokemonData } from './services/pokeapi.service';
-import { handleBattleSimulator, handleListMoves } from './services/tool.handler';
+import { handleBattleSimulator, handleGetPokemon, handleGetTypeEffectiveness } from './services/tool.handler';
 import { Pokemon } from './pokemon.types';
 import { config } from './config';
 
@@ -49,6 +49,15 @@ async function handleMCPRequest(mcpRequest: MCPRequest) {
     switch (method) {
       case 'initialize':
         return sendResponse(id, { protocolVersion: config.server.mcpVersion, serverInfo: { name: config.server.serverName, version: config.server.serverVersion } });
+      
+      case 'resources.list':
+        return sendResponse(id, {
+            resources: [
+                { uri: "pokemon://database", name: "Pokemon Database", description: "Access to comprehensive Pokémon data including stats, types, abilities, and moves." },
+                { uri: "pokemon://types", name: "Type Effectiveness Chart", description: "Pokémon type effectiveness multipliers for battle calculations." }
+            ]
+        });
+
       case 'resources.read': {
         const { uri } = params;
         const pokemonName = uri.split('/').pop();
@@ -58,15 +67,60 @@ async function handleMCPRequest(mcpRequest: MCPRequest) {
         const text = formatPokemonDataForDisplay(pokemonData);
         return sendResponse(id, { contents: [{ uri, mimeType: "text/plain", text }] });
       }
+
+      case 'tools.list':
+        return sendResponse(id, {
+            tools: [
+                {
+                    name: "get_pokemon",
+                    description: "Fetch comprehensive data for a specific Pokémon by name or ID.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            name: { type: "string", description: "The name or ID of the Pokémon." }
+                        },
+                        required: ["name"]
+                    }
+                },
+                {
+                    name: "battle_simulate",
+                    description: "Simulate a battle between two Pokémon.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            pokemon1: { type: "string", description: "The name of the first Pokémon." },
+                            pokemon2: { type: "string", description: "The name of the second Pokémon." }
+                        },
+                        required: ["pokemon1", "pokemon2"]
+                    }
+                },
+                {
+                    name: "get_type_effectiveness",
+                    description: "Get type effectiveness information for battle strategy.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            attacking_type: { type: "string", description: "The attacking type." },
+                            defending_types: { type: "array", items: { type: "string" }, description: "The defending types." }
+                        },
+                        required: ["attacking_type", "defending_types"]
+                    }
+                }
+            ]
+        });
+
       case 'tools.call': {
         const { name, arguments: toolArgs } = params;
         let result;
         switch (name) {
-          case "battle_simulator":
+          case "get_pokemon":
+            result = await handleGetPokemon(toolArgs);
+            break;
+          case "battle_simulate":
             result = await handleBattleSimulator(toolArgs);
             break;
-          case "list_moves":
-            result = await handleListMoves(toolArgs);
+          case "get_type_effectiveness":
+            result = await handleGetTypeEffectiveness(toolArgs);
             break;
           default:
             return sendResponse(id, null, { code: -32601, message: `Tool '${name}' not found.` });
