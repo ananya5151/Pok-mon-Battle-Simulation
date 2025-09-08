@@ -2,8 +2,8 @@
 
 import axios from 'axios';
 import { Pokemon, EvolutionInfo, Move } from '../pokemon.types';
+import { config } from '../config';
 
-const API_BASE_URL = 'https://pokeapi.co/api/v2';
 const pokemonCache = new Map<string, Pokemon>();
 
 async function getMoveData(moveUrl: string): Promise<Move | null> {
@@ -24,16 +24,21 @@ async function getMoveData(moveUrl: string): Promise<Move | null> {
 }
 
 export async function getPokemonData(name: string): Promise<Pokemon | null> {
-  const identifier = name.toLowerCase();
+  const identifier = name ? name.toLowerCase().trim() : '';
+
+  // --- ADDED THIS GUARD CLAUSE ---
+  // Prevents the server from crashing on empty or invalid input.
+  if (!identifier) {
+      console.error("getPokemonData called with an invalid name.");
+      return null;
+  }
   
   if (pokemonCache.has(identifier)) {
-    console.log(`CACHE HIT: Found ${identifier} in cache.`);
     return pokemonCache.get(identifier)!;
   }
 
   try {
-    console.log(`CACHE MISS: Fetching ${identifier} from PokéAPI.`);
-    const response = await axios.get(`${API_BASE_URL}/pokemon/${identifier}`);
+    const response = await axios.get(`${config.api.baseUrl}/pokemon/${identifier}`);
     const apiData = response.data;
 
     const speciesResp = await axios.get(apiData.species.url);
@@ -61,7 +66,7 @@ export async function getPokemonData(name: string): Promise<Pokemon | null> {
       evolution = { evolvesFrom, evolvesTo, chain: chainNames };
     }
     
-    const movePromises = apiData.moves.slice(0, 20).map((m: any) => getMoveData(m.move.url));
+    const movePromises = apiData.moves.slice(0, config.api.moveFetchLimit).map((m: any) => getMoveData(m.move.url));
     const moves = (await Promise.all(movePromises)).filter((m): m is Move => m !== null);
 
     const pokemon: Pokemon = {

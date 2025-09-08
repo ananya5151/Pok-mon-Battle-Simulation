@@ -1,23 +1,46 @@
 {
   "name": "pokemon-battle-mcp-server",
   "version": "2.0.0",
-  "description": "An advanced MCP-compliant server for Pokémon data and battle simulation, featuring an AI-powered interface.",
+  "description": "MCP-compliant Pokemon Battle Simulation Server with AI integration",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc",
+    "dev": "ts-node src/server.ts",
+    "build": "tsc -p .",
     "start": "node dist/server.js",
-    "dev": "ts-node src/server.ts"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "mcp:demo": "node example-mcp-client.js",
+    "mcp:init": "curl -X POST -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"id\":1}' http://localhost:3000/mcp/initialize"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ananya5151/Pok-mon-Battle-Simulation.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "pokemon",
+    "battle-simulation",
+    "ai",
+    "typescript",
+    "express"
+  ],
   "author": "AI Engineer",
   "license": "MIT",
-  "dependencies": {
-    "axios": "^1.6.7",
-    "express": "^4.18.3"
+  "bugs": {
+    "url": "https://github.com/ananya5151/Pok-mon-Battle-Simulation/issues"
+  },
+  "homepage": "https://github.com/ananya5151/Pok-mon-Battle-Simulation#readme",
+  "engines": {
+    "node": ">=18.0.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.24",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "axios": "^1.6.7",
+    "express": "^4.18.3"
   }
 }

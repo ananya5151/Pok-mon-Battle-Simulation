@@ -26,7 +26,7 @@ export interface Move {
     type: string;
     accuracy: number | null;
     category: 'physical' | 'special' | 'status';
-    effect?: StatusEffect;
+    effect?: StatusEffectName;
     chance?: number;
 }
 
@@ -36,4 +36,15 @@ export interface EvolutionInfo {
   chain: string[];
 }
 
-export type StatusEffect = 'paralysis' | 'burn' | 'poison' | 'sleep' | 'freeze' | null;
+export type StatusEffectName = 'paralysis' | 'burn' | 'poison' | 'sleep' | 'freeze';
+
+export interface StatusEffect {
+  name: StatusEffectName;
+  turns: number;
+}
+
+// Type for a Pokémon actively in battle
+export type BattlingPokemon = Pokemon & {
+  currentHp: number;
+  status: StatusEffect | null;
+};

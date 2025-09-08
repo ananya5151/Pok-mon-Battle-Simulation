@@ -6,9 +6,6 @@ import re
 
 # --- Configuration ---
 MCP_SERVER_URL = "http://localhost:3000"
-# In a real-world scenario, you would use a library like openai, groq, or anthropic
-# and provide an API key. For this example, we'll simulate the AI's response.
-AI_PROVIDER_ENABLED = False 
 
 class MCPClient:
     """A client to interact with the Pokemon MCP server."""
@@ -24,14 +21,15 @@ class MCPClient:
             payload["params"] = params
         
         self.request_id += 1
-        url = f"{self.server_url}/mcp/{method.replace('.', '/')}"
+        url_path = method.replace('.', '/')
+        url = f"{self.server_url}/mcp/{url_path}"
         
         try:
             response = requests.post(url, json=payload)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"❌ Network Error: Could not connect to the MCP server at {url}.")
+            print(f"❌ Network Error: Could not connect to the MCP server at {url}. Is it running?")
             return {"error": {"message": str(e)}}
 
     def call_tool(self, name: str, arguments: dict) -> str:
@@ -52,17 +50,16 @@ class MCPClient:
 class SimulatedAI:
     """
     A simulated AI to parse natural language and determine the user's intent.
-    This replaces a real LLM call to avoid needing an API key for this example.
     """
     def get_intent(self, user_input: str) -> dict:
         user_input_lower = user_input.lower().strip()
         
         # Battle Intent
-        battle_match = re.search(r'(battle|fight|vs|versus|simulate)\s+([a-zA-Z-]+)\s+(?:and|vs|versus)\s+([a-zA-Z-]+)', user_input_lower)
+        battle_match = re.search(r'(?:battle|fight|vs|versus|simulate).*?([a-zA-Z-]+)\s+(?:and|vs|versus)\s+([a-zA-Z-]+)', user_input_lower)
         if battle_match:
             return {
                 "tool_name": "battle_simulator",
-                "arguments": {"pokemon1": battle_match.group(2), "pokemon2": battle_match.group(3)}
+                "arguments": {"pokemon1": battle_match.group(1), "pokemon2": battle_match.group(2)}
             }
             
         # Moves Intent
@@ -75,8 +72,9 @@ class SimulatedAI:
                 "arguments": {"name": moves_match.group(2), "limit": limit}
             }
             
-        # Info Intent
-        info_match = re.search(r'(info|stats|about|who is|tell me about)\s+([a-zA-Z-]+)', user_input_lower)
+        # --- FIXED INFO INTENT REGEX ---
+        # This now handles optional words like "for" or "on".
+        info_match = re.search(r'(info|stats|about|who is|tell me about)\s+(?:on|for)?\s*([a-zA-Z-]+)', user_input_lower)
         if info_match:
             return {
                 "resource_uri": f"pokemon://data/{info_match.group(2)}"
@@ -111,10 +109,8 @@ def main():
 
             print("🤖 Assistant: Thinking...")
             
-            # 1. Get intent from the (simulated) AI
             intent = ai.get_intent(user_input)
 
-            # 2. Execute the determined action
             if "error" in intent:
                 response = intent["error"]
             elif "tool_name" in intent:
@@ -124,7 +120,6 @@ def main():
             else:
                 response = "I'm not sure how to handle that request."
 
-            # 3. Print the response
             print(f"\n🤖 Assistant:\n{response}")
 
         except KeyboardInterrupt:
