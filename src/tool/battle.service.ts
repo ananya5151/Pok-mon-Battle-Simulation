@@ -5,8 +5,6 @@ import { config } from '../config';
 
 type TypeChart = { [key: string]: { [key: string]: number } };
 
-// --- FIXED TYPE CHART ---
-// Added the missing psychic vs ghost = 0 immunity.
 const typeEffectiveness: TypeChart = {
     "normal": { "rock": 0.5, "ghost": 0, "steel": 0.5 }, "fire": { "fire": 0.5, "water": 0.5, "grass": 2, "ice": 2, "bug": 2, "rock": 0.5, "dragon": 0.5, "steel": 2 },
     "water": { "fire": 2, "water": 0.5, "grass": 0.5, "ground": 2, "rock": 2, "dragon": 0.5 }, "electric": { "water": 2, "electric": 0.5, "grass": 0.5, "ground": 0, "flying": 2, "dragon": 0.5 },
@@ -32,65 +30,68 @@ export class BattleSimulator {
         this.p2 = { ...pokemon2, currentHp: pokemon2.stats.hp, status: null };
     }
 
-    private getPokemonDetails(p: Pokemon): string[] {
-        const totalStats = p.stats.hp + p.stats.attack + p.stats.defense + p.stats.specialAttack + p.stats.specialDefense + p.stats.speed;
-        return [
-            `🏷️ **Type:** ${p.types.join(' / ')}`,
-            `📊 **Base Stats:**`,
-            `   ❤️ HP: ${p.stats.hp} | ⚔️ Atk: ${p.stats.attack} | 🛡️ Def: ${p.stats.defense}`,
-            `   🔮 SpA: ${p.stats.specialAttack} | ✨ SpD: ${p.stats.specialDefense} | 💨 Spd: ${p.stats.speed}`,
-            `   📈 **Total: ${totalStats}**`
-        ];
-    }
+    // --- NEW: A dedicated method to handle end-of-turn status effects ---
+    private processStatusEffects(pokemon: BattlingPokemon) {
+        if (!pokemon.status) return;
 
-    private generatePreBattleSummary() {
-        this.battleLog.push("========================================");
-        this.battleLog.push(`⚔️ BATTLE: ${this.p1.name.toUpperCase()} vs ${this.p2.name.toUpperCase()} ⚔️`);
-        this.battleLog.push("========================================");
-        this.battleLog.push(`\n🔵 **${this.p1.name.toUpperCase()}** (#${this.p1.id})`);
-        this.battleLog.push(...this.getPokemonDetails(this.p1).map(s => `   ${s}`));
-        this.battleLog.push(`\n🔴 **${this.p2.name.toUpperCase()}** (#${this.p2.id})`);
-        this.battleLog.push(...this.getPokemonDetails(this.p2).map(s => `   ${s}`));
-        
-        if (this.p1.stats.speed > this.p2.stats.speed) this.battleLog.push(`\n⚡ **Speed Advantage:** ${this.p1.name} is faster and will attack first!`);
-        else if (this.p2.stats.speed > this.p1.stats.speed) this.battleLog.push(`\n⚡ **Speed Advantage:** ${this.p2.name} is faster and will attack first!`);
-        else this.battleLog.push(`\n⚡ **Speed Tie:** Both Pokémon have the same speed!`);
-        
-        this.battleLog.push("\n--- BATTLE BEGINS! ---\n");
+        switch (pokemon.status.name) {
+            case 'burn':
+                const burnDamage = Math.max(1, Math.floor(pokemon.stats.hp / 16));
+                pokemon.currentHp = Math.max(0, pokemon.currentHp - burnDamage);
+                this.battleLog.push(`   🔥 ${pokemon.name} is hurt by its burn! (-${burnDamage} HP)`);
+                break;
+            case 'poison':
+                const poisonDamage = Math.max(1, Math.floor(pokemon.stats.hp / 8));
+                pokemon.currentHp = Math.max(0, pokemon.currentHp - poisonDamage);
+                this.battleLog.push(`   ☠️ ${pokemon.name} is hurt by poison! (-${poisonDamage} HP)`);
+                break;
+            case 'sleep':
+                pokemon.status.turns++;
+                if (pokemon.status.turns >= 3) { // Wake up after a few turns
+                    this.battleLog.push(`   😴 ${pokemon.name} woke up!`);
+                    pokemon.status = null;
+                }
+                break;
+        }
     }
-
-    private generatePostBattleAnalysis(winner: BattlingPokemon, loser: BattlingPokemon) {
-        this.battleLog.push("\n========================================");
-        this.battleLog.push("🧠 STRATEGIC ANALYSIS");
-        this.battleLog.push("========================================");
-        if (winner.stats.speed > loser.stats.speed) this.battleLog.push(`• **Speed Kills:** ${winner.name}'s superior speed (${winner.stats.speed} vs ${loser.stats.speed}) was a decisive factor, allowing it to dictate the pace of the battle.`);
-        
-        let advantageFound = false;
-        for (const move of winner.moves) {
-            if (move?.power) {
-                let effectiveness = 1;
-                loser.types.forEach(defenseType => { effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1; });
-                if (effectiveness > 1) advantageFound = true;
+    
+    // --- UPDATED: Turn logic now checks for more statuses and applies move effects ---
+    private performTurn(attacker: BattlingPokemon, defender: BattlingPokemon) {
+        // Check if status prevents moving
+        if (attacker.status) {
+            if (attacker.status.name === 'paralysis' && Math.random() < 0.25) {
+                this.battleLog.push(`   ⚡ ${attacker.name} is fully paralyzed and can't move!`);
+                return;
+            }
+            if (attacker.status.name === 'sleep') {
+                this.battleLog.push(`   😴 ${attacker.name} is fast asleep.`);
+                return;
+            }
+            if (attacker.status.name === 'freeze') {
+                if (Math.random() < 0.2) {
+                    attacker.status = null;
+                    this.battleLog.push(`   🧊 ${attacker.name} thawed out!`);
+                } else {
+                    this.battleLog.push(`   🧊 ${attacker.name} is frozen solid!`);
+                    return;
+                }
             }
         }
-        if (advantageFound) this.battleLog.push(`• **Type Mastery:** ${winner.name} successfully exploited a type advantage against ${loser.name}, dealing massive damage with super-effective moves.`);
-
-        this.battleLog.push(`• **Decisive Victory:** With ${Math.round(winner.currentHp)} HP remaining, ${winner.name} proved its dominance in this matchup.`);
-    }
-
-    private performTurn(attacker: BattlingPokemon, defender: BattlingPokemon) {
-        if (attacker.status?.name === 'paralysis' && Math.random() < 0.25) { this.battleLog.push(`   ⚡ ${attacker.name} is fully paralyzed and can't move!`); return; }
         
         const move = this.selectMove(attacker, defender);
         if (!move) { this.battleLog.push(`   ${attacker.name} has no usable moves!`); return; }
         
         const moveName = move.name.replace(/-/g, ' ');
+        this.battleLog.push(`\n**${attacker.name}'s Turn:**`);
         this.battleLog.push(`   🎯 ${attacker.name} used **${moveName}**!`);
       
-        if ((move.accuracy || 101) <= 100 && Math.random() > (move.accuracy || 100) / 100) {
-            this.battleLog.push(`   💨 The attack missed!`);
+        // --- NEW: Detailed accuracy roll logging ---
+        const accuracyRoll = Math.random();
+        if ((move.accuracy || 101) <= 100 && accuracyRoll > (move.accuracy || 100) / 100) {
+            this.battleLog.push(`   🎲 Accuracy Roll: FAILED - The attack missed!`);
             return;
         }
+        this.battleLog.push(`   🎲 Accuracy Roll: SUCCESS - The attack hits!`);
 
         if (move.power) {
             const { damage, effectiveness } = this.calculateDamage(attacker, defender, move);
@@ -102,22 +103,33 @@ export class BattleSimulator {
             
             const isCritical = Math.random() < config.battle.critChance;
             const finalDamage = isCritical ? Math.floor(damage * config.battle.critMultiplier) : damage;
+            const oldHp = defender.currentHp;
+            defender.currentHp = Math.max(0, defender.currentHp - finalDamage);
 
             let logParts = [];
             if (isCritical) logParts.push("💥 A critical hit!");
             
             let effectivenessText = '';
-            if (effectiveness > 1) effectivenessText = "It's super effective!";
-            if (effectiveness < 1) effectivenessText = "It's not very effective...";
-
-            defender.currentHp = Math.max(0, defender.currentHp - finalDamage);
-            logParts.push(`Dealt **${finalDamage} damage** to ${defender.name}.`);
-            if(effectivenessText) logParts.push(effectivenessText);
+            if (effectiveness > 2) effectivenessText = "It's extremely effective!";
+            else if (effectiveness > 1) effectivenessText = "It's super effective!";
+            else if (effectiveness < 1) effectivenessText = "It's not very effective...";
+            if (effectivenessText) logParts.push(effectivenessText);
 
             this.battleLog.push(`   ${logParts.join(' ')}`);
+            this.battleLog.push(`   💥 Dealt **${finalDamage} damage**!`);
+            this.battleLog.push(`   📉 ${defender.name}'s HP: ${oldHp} → ${defender.currentHp}`);
+        }
+
+        // --- NEW: Apply status effect from the move ---
+        if (defender.currentHp > 0 && move.effect && move.chance && !defender.status) {
+            if (Math.random() < move.chance) {
+                defender.status = { name: move.effect, turns: 0 };
+                this.battleLog.push(`   ✨ ${defender.name} was afflicted with **${move.effect}**!`);
+            }
         }
     }
 
+    // --- NEW: Added detailed breakdown logging ---
     private calculateDamage(attacker: BattlingPokemon, defender: BattlingPokemon, move: Move) {
         if (!move.power) return { damage: 0, effectiveness: 1 };
       
@@ -125,6 +137,7 @@ export class BattleSimulator {
 
         if (move.category === 'physical') {
             attackStat = attacker.stats.attack;
+            // Burn halves physical attack
             if (attacker.status?.name === 'burn') attackStat /= 2;
             defenseStat = defender.stats.defense;
         } else {
@@ -134,20 +147,25 @@ export class BattleSimulator {
     
         let baseDamage = (((2 * config.battle.defaultLevel / 5 + 2) * move.power * (attackStat / defenseStat)) / 50) + 2;
         
-        if (attacker.types.includes(move.type)) baseDamage *= config.battle.stabMultiplier;
+        const isStab = attacker.types.includes(move.type);
+        if (isStab) baseDamage *= config.battle.stabMultiplier;
         
         let effectiveness = 1;
         defender.types.forEach(defenseType => { effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1; });
         baseDamage *= effectiveness;
         
-        baseDamage *= (Math.random() * (config.battle.randomFactor.max - config.battle.randomFactor.min) + config.battle.randomFactor.min);
+        const randomFactor = Math.random() * (config.battle.randomFactor.max - config.battle.randomFactor.min) + config.battle.randomFactor.min;
+        baseDamage *= randomFactor;
         
+        // --- NEW: Log the calculation details ---
+        this.battleLog.push(`   🧮 Damage Calculation: (Power: ${move.power}, Atk: ${Math.round(attackStat)}, Def: ${Math.round(defenseStat)}, STAB: ${isStab}, Type Mod: x${effectiveness})`);
+
         const finalDamage = Math.max(1, Math.floor(baseDamage));
         return { damage: finalDamage, effectiveness };
     }
 
     private selectMove(attacker: BattlingPokemon, defender: BattlingPokemon): Move | null {
-        const attackingMoves = attacker.moves.filter(m => m.power);
+        const attackingMoves = attacker.moves.filter(m => m.power || m.category === 'status');
         if (attackingMoves.length === 0) return attacker.moves[0] || null;
 
         return attackingMoves.reduce((bestMove, currentMove) => {
@@ -159,20 +177,27 @@ export class BattleSimulator {
 
     private calculateMoveScore(move: Move, defender: BattlingPokemon): number {
         let effectiveness = 1;
-        defender.types.forEach(defenseType => {
-            effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1;
-        });
-        return (move.power || 0) * effectiveness * ((move.accuracy || 100) / 100);
+        if (move.power) {
+            defender.types.forEach(defenseType => {
+                effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1;
+            });
+        }
+        // Give a small boost to moves that can apply status effects
+        const statusBonus = (move.effect && !defender.status) ? 20 : 0;
+        return (move.power || 0) * effectiveness * ((move.accuracy || 100) / 100) + statusBonus;
     }
     
     public run(): string[] {
         this.generatePreBattleSummary();
 
         while (this.p1.currentHp > 0 && this.p2.currentHp > 0 && this.turn <= config.battle.maxTurns) {
-            this.battleLog.push(`--- Turn ${this.turn} ---`);
-            const hpBar = (p: BattlingPokemon) => `[${'█'.repeat(Math.ceil(p.currentHp/p.stats.hp*10))}${' '.repeat(10-Math.ceil(p.currentHp/p.stats.hp*10))}]`;
-            this.battleLog.push(`${this.p1.name}: ${hpBar(this.p1)} ${Math.round(this.p1.currentHp)}/${this.p1.stats.hp} HP`);
-            this.battleLog.push(`${this.p2.name}: ${hpBar(this.p2)} ${Math.round(this.p2.currentHp)}/${this.p2.stats.hp} HP`);
+            this.battleLog.push(`\n--- Turn ${this.turn} ---`);
+            const hpBar = (p: BattlingPokemon) => {
+                const healthPercent = Math.ceil(p.currentHp / p.stats.hp * 20);
+                return `[${'█'.repeat(healthPercent)}${' '.repeat(20 - healthPercent)}]`;
+            };
+            this.battleLog.push(`${this.p1.name}: ${hpBar(this.p1)} ${Math.round(this.p1.currentHp)}/${this.p1.stats.hp} HP ${this.p1.status ? `(${this.p1.status.name})` : ''}`);
+            this.battleLog.push(`${this.p2.name}: ${hpBar(this.p2)} ${Math.round(this.p2.currentHp)}/${this.p2.stats.hp} HP ${this.p2.status ? `(${this.p2.status.name})` : ''}`);
 
             const [first, second] = this.p1.stats.speed >= this.p2.stats.speed ? [this.p1, this.p2] : [this.p2, this.p1];
 
@@ -187,22 +212,40 @@ export class BattleSimulator {
                 this.battleLog.push(`\n💀 ${first.name} has fainted!`);
                 break;
             }
+
+            // --- NEW: Process end-of-turn status effects for both Pokémon ---
+            this.battleLog.push("\n**End of Turn Effects:**");
+            if (this.p1.currentHp > 0) this.processStatusEffects(this.p1);
+            if (this.p2.currentHp > 0) this.processStatusEffects(this.p2);
             
-            this.battleLog.push("");
             this.turn++;
         }
 
+        if (this.p1.currentHp <= 0) this.battleLog.push(`\n💀 ${this.p1.name} fainted from end-of-turn effects!`);
+        if (this.p2.currentHp <= 0) this.battleLog.push(`\n💀 ${this.p2.name} fainted from end-of-turn effects!`);
+
         if (this.turn > config.battle.maxTurns) {
-            this.battleLog.push("The battle timed out! It's a draw!");
+            this.battleLog.push("\nThe battle timed out! It's a draw!");
             return this.battleLog;
         }
 
         const winner = this.p1.currentHp > 0 ? this.p1 : this.p2;
-        const loser = winner === this.p1 ? this.p2 : this.p1;
         this.battleLog.push(`\n--- 🏆 ${winner.name.toUpperCase()} WINS THE BATTLE! ---`);
 
-        this.generatePostBattleAnalysis(winner, loser);
-
         return this.battleLog;
+    }
+
+    private generatePreBattleSummary() {
+        this.battleLog.push("========================================");
+        this.battleLog.push(`⚔️ BATTLE: ${this.p1.name.toUpperCase()} vs ${this.p2.name.toUpperCase()} ⚔️`);
+        this.battleLog.push("========================================");
+        this.battleLog.push(`\n🔵 **${this.p1.name.toUpperCase()}** (#${this.p1.id})`);
+        this.battleLog.push(`\n🔴 **${this.p2.name.toUpperCase()}** (#${this.p2.id})`);
+        
+        if (this.p1.stats.speed > this.p2.stats.speed) this.battleLog.push(`\n⚡ **Speed Advantage:** ${this.p1.name} is faster and will attack first!`);
+        else if (this.p2.stats.speed > this.p1.stats.speed) this.battleLog.push(`\n⚡ **Speed Advantage:** ${this.p2.name} is faster and will attack first!`);
+        else this.battleLog.push(`\n⚡ **Speed Tie:** Both Pokémon have the same speed!`);
+        
+        this.battleLog.push("\n--- BATTLE BEGINS! ---\n");
     }
 }

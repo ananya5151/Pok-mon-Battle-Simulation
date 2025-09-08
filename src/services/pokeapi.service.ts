@@ -1,23 +1,40 @@
 // src/services/pokeapi.service.ts
 
 import axios from 'axios';
-import { Pokemon, EvolutionInfo, Move } from '../pokemon.types';
+import { Pokemon, EvolutionInfo, Move, StatusEffectName } from '../pokemon.types';
 import { config } from '../config';
 
 const pokemonCache = new Map<string, Pokemon>();
 
+// This function now extracts status effect details from the API response.
 async function getMoveData(moveUrl: string): Promise<Move | null> {
     try {
         const response = await axios.get(moveUrl);
         const moveData = response.data;
+
+        // Extract status effect and its chance from the complex API object
+        let effect: StatusEffectName | undefined = undefined;
+        let chance: number | undefined = undefined;
+
+        if (moveData.meta?.ailment?.name && moveData.meta?.ailment_chance > 0) {
+            const ailmentName = moveData.meta.ailment.name;
+            if (['paralysis', 'burn', 'poison', 'sleep', 'freeze'].includes(ailmentName)) {
+                effect = ailmentName as StatusEffectName;
+                chance = moveData.meta.ailment_chance / 100; // Convert percentage to decimal
+            }
+        }
+
         return {
             name: moveData.name,
             power: moveData.power,
             type: moveData.type.name,
             accuracy: moveData.accuracy,
             category: moveData.damage_class.name,
+            effect,
+            chance,
         };
     } catch (error) {
+        // It's better to log the specific URL that failed.
         console.error(`Failed to fetch move data from ${moveUrl}:`, error);
         return null;
     }
@@ -26,8 +43,6 @@ async function getMoveData(moveUrl: string): Promise<Move | null> {
 export async function getPokemonData(name: string): Promise<Pokemon | null> {
   const identifier = name ? name.toLowerCase().trim() : '';
 
-  // --- ADDED THIS GUARD CLAUSE ---
-  // Prevents the server from crashing on empty or invalid input.
   if (!identifier) {
       console.error("getPokemonData called with an invalid name.");
       return null;
@@ -92,7 +107,8 @@ export async function getPokemonData(name: string): Promise<Pokemon | null> {
     pokemonCache.set(identifier, pokemon);
     return pokemon;
   } catch (error) {
-    console.error(`Error fetching data for ${name}:`, error);
+    // Log a more helpful error message.
+    console.error(`Error fetching Pokémon data for "${name}". It may not exist.`);
     return null;
   }
 }

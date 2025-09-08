@@ -26,7 +26,9 @@ export interface Move {
     type: string;
     accuracy: number | null;
     category: 'physical' | 'special' | 'status';
+    // EFFECT: The name of the status effect the move can inflict (e.g., 'paralysis').
     effect?: StatusEffectName;
+    // CHANCE: The probability (from 0 to 1) of the effect occurring.
     chance?: number;
 }
 
