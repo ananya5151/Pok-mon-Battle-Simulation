@@ -33,37 +33,14 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "mcp": {
-    "protocol": "2024-11-05",
-    "capabilities": {
-      "resources": {
-        "subscribe": true,
-        "listChanged": true
-      },
-      "tools": {}
-    },
-    "resources": [
-      {
-        "uri": "pokemon://data",
-        "name": "Pokemon Data",
-        "description": "Comprehensive Pokemon data including stats, types, abilities, moves, and evolution information"
-      }
-    ],
-    "tools": [
-      {
-        "name": "battle_simulator",
-        "description": "Simulate a Pokemon battle between two Pokemon with detailed battle mechanics"
-      }
-    ]
-  },
   "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/node": "^24.3.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.24",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.3.3"
   },
   "dependencies": {
-    "axios": "^1.11.0",
-    "express": "^5.1.0"
+    "axios": "^1.6.7",
+    "express": "^4.18.3"
   }
 }

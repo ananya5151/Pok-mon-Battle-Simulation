@@ -1,227 +1,198 @@
 // src/tool/battle.service.ts
 
-import { Pokemon } from '../pokemon.types';
+import { Pokemon, StatusEffect } from '../pokemon.types';
 
-type TypeChart = {
-  [key: string]: { [key: string]: number }
-};
+type TypeChart = { [key: string]: { [key: string]: number } };
 
-// NEW: Define the structure for a move, now including optional status effects.
 interface Move {
   power: number;
   type: string;
-  effect?: 'paralysis' | 'burn' | 'poison';
+  effect?: StatusEffect;
   chance?: number;
 }
 
-// A simplified map for type effectiveness.
 const typeEffectiveness: TypeChart = {
-  normal: { rock: 0.5, ghost: 0 },
-  fire: { fire: 0.5, water: 0.5, grass: 2, ice: 2, bug: 2, rock: 0.5, steel: 2 },
-  water: { fire: 2, water: 0.5, grass: 0.5, ground: 2, rock: 2, dragon: 0.5 },
-  electric: { water: 2, electric: 0.5, grass: 0.5, ground: 0, flying: 2, dragon: 0.5 },
-  grass: { fire: 0.5, water: 2, grass: 0.5, poison: 0.5, ground: 2, flying: 0.5, bug: 0.5, rock: 2, dragon: 0.5, steel: 0.5 },
-  flying: { electric: 0.5, grass: 2, fighting: 2, bug: 2, rock: 0.5, steel: 0.5 },
-  ghost: { normal: 0, psychic: 2, ghost: 2 },
-  rock: { fire: 2, ice: 2, fighting: 0.5, ground: 0.5, flying: 2, bug: 2, steel: 0.5 },
-  poison: { grass: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0 },
+    "normal": { "rock": 0.5, "ghost": 0, "steel": 0.5 }, "fire": { "fire": 0.5, "water": 0.5, "grass": 2, "ice": 2, "bug": 2, "rock": 0.5, "dragon": 0.5, "steel": 2 },
+    "water": { "fire": 2, "water": 0.5, "grass": 0.5, "ground": 2, "rock": 2, "dragon": 0.5 }, "electric": { "water": 2, "electric": 0.5, "grass": 0.5, "ground": 0, "flying": 2, "dragon": 0.5 },
+    "grass": { "fire": 0.5, "water": 2, "grass": 0.5, "poison": 0.5, "ground": 2, "flying": 0.5, "bug": 0.5, "rock": 2, "dragon": 0.5, "steel": 0.5 },
+    "ice": { "fire": 0.5, "water": 0.5, "grass": 2, "ice": 0.5, "ground": 2, "flying": 2, "dragon": 2, "steel": 0.5 },
+    "fighting": { "normal": 2, "ice": 2, "poison": 0.5, "flying": 0.5, "psychic": 0.5, "bug": 0.5, "rock": 2, "ghost": 0, "dark": 2, "steel": 2, "fairy": 0.5 },
+    "poison": { "grass": 2, "poison": 0.5, "ground": 0.5, "rock": 0.5, "ghost": 0.5, "steel": 0, "fairy": 2 }, "ground": { "fire": 2, "electric": 2, "grass": 0.5, "poison": 2, "flying": 0, "bug": 0.5, "rock": 2, "steel": 2 },
+    "flying": { "electric": 0.5, "grass": 2, "fighting": 2, "bug": 2, "rock": 0.5, "steel": 0.5 }, "psychic": { "fighting": 2, "poison": 2, "psychic": 0.5, "dark": 0, "steel": 0.5 },
+    "bug": { "fire": 0.5, "grass": 2, "fighting": 0.5, "poison": 0.5, "flying": 0.5, "psychic": 2, "ghost": 0.5, "dark": 2, "steel": 0.5, "fairy": 0.5 },
+    "rock": { "fire": 2, "ice": 2, "fighting": 0.5, "ground": 0.5, "flying": 2, "bug": 2, "steel": 0.5 }, "ghost": { "normal": 0, "psychic": 2, "ghost": 2, "dark": 0.5 },
+    "dragon": { "dragon": 2, "steel": 0.5, "fairy": 0 }, "dark": { "fighting": 0.5, "psychic": 2, "ghost": 2, "dark": 0.5, "fairy": 0.5 },
+    "steel": { "fire": 0.5, "water": 0.5, "electric": 0.5, "ice": 2, "rock": 2, "steel": 0.5, "fairy": 2 }, "fairy": { "fire": 0.5, "fighting": 2, "poison": 0.5, "dragon": 2, "dark": 2, "steel": 0.5 }
 };
 
-// NEW: Updated move data with status-effecting moves.
 const moveData: { [key: string]: Move } = {
-  'tackle': { power: 40, type: 'normal' },
-  'ember': { power: 40, type: 'fire' },
-  'fire-punch': { power: 75, type: 'fire' },
-  'flamethrower': { power: 90, type: 'fire' },
-  'water-gun': { power: 40, type: 'water' },
-  'bubble-beam': { power: 65, type: 'water' },
-  'thunder-shock': { power: 40, type: 'electric' },
-  'thunderbolt': { power: 90, type: 'electric' },
-  'wing-attack': { power: 60, type: 'flying' },
-  'quick-attack': { power: 40, type: 'normal' },
-  'toxic': { power: 0, type: 'poison', effect: 'poison', chance: 0.9 },
-  'thunder-wave': { power: 0, type: 'electric', effect: 'paralysis', chance: 0.9 },
-  'will-o-wisp': { power: 0, type: 'fire', effect: 'burn', chance: 0.85 },
+    'tackle': { power: 40, type: 'normal' }, 'ember': { power: 40, type: 'fire', effect: 'burn', chance: 0.1 },
+    'fire-punch': { power: 75, type: 'fire', effect: 'burn', chance: 0.1 }, 'flamethrower': { power: 90, type: 'fire', effect: 'burn', chance: 0.1 },
+    'water-gun': { power: 40, type: 'water' }, 'bubble-beam': { power: 65, type: 'water' },
+    'thunder-shock': { power: 40, type: 'electric', effect: 'paralysis', chance: 0.1 }, 'thunderbolt': { power: 90, type: 'electric', effect: 'paralysis', chance: 0.1 },
+    'ice-beam': { power: 90, type: 'ice', effect: 'freeze', chance: 0.1 }, 'blizzard': { power: 110, type: 'ice', effect: 'freeze', chance: 0.1 },
+    'wing-attack': { power: 60, type: 'flying' }, 'quick-attack': { power: 40, type: 'normal' },
+    'toxic': { power: 0, type: 'poison', effect: 'poison', chance: 0.9 }, 'thunder-wave': { power: 0, type: 'electric', effect: 'paralysis', chance: 0.9 },
+    'will-o-wisp': { power: 0, type: 'fire', effect: 'burn', chance: 0.85 }, 'spore': { power: 0, type: 'grass', effect: 'sleep', chance: 1.0 }
 };
 
-// NEW: Define a type for our battling Pokémon to include HP and status.
 type BattlingPokemon = Pokemon & {
   currentHp: number;
-  status: 'paralysis' | 'burn' | 'poison' | null;
+  status: StatusEffect;
+  statusTurns: number;
 };
 
-/**
- * Simulates a battle between two Pokémon.
- * @param pokemon1 - The first Pokémon object.
- * @param pokemon2 - The second Pokémon object.
- * @returns A detailed log of the battle.
- */
 export function simulateBattle(pokemon1: Pokemon, pokemon2: Pokemon): string[] {
   const battleLog: string[] = [];
+  let p1: BattlingPokemon = { ...pokemon1, currentHp: pokemon1.stats.hp, status: null, statusTurns: 0 };
+  let p2: BattlingPokemon = { ...pokemon2, currentHp: pokemon2.stats.hp, status: null, statusTurns: 0 };
 
-  // NEW: Clones now include a 'status' property, initialized to null.
-  let p1: BattlingPokemon = { ...pokemon1, currentHp: pokemon1.stats.hp, status: null };
-  let p2: BattlingPokemon = { ...pokemon2, currentHp: pokemon2.stats.hp, status: null };
-
-  // 1. Pre-Battle Summary
   battleLog.push("========================================");
   battleLog.push(`⚔️ BATTLE: ${p1.name.toUpperCase()} vs ${p2.name.toUpperCase()} ⚔️`);
   battleLog.push("========================================");
-  if (p1.stats.speed > p2.stats.speed) {
-    battleLog.push(`⚡ Speed Advantage: ${p1.name} will attack first!`);
-  } else {
-    battleLog.push(`⚡ Speed Advantage: ${p2.name} will attack first!`);
-  }
+  battleLog.push(`🔵 ${p1.name}: ${p1.stats.hp} HP | ${p1.types.join('/')}`);
+  battleLog.push(`🔴 ${p2.name}: ${p2.stats.hp} HP | ${p2.types.join('/')}`);
+  if (p1.stats.speed > p2.stats.speed) battleLog.push(`⚡ Speed Advantage: ${p1.name} will attack first!`);
+  else battleLog.push(`⚡ Speed Advantage: ${p2.name} will attack first!`);
+  
+  handleEntryAbilities(p1, p2, battleLog);
+  handleEntryAbilities(p2, p1, battleLog);
+  
   battleLog.push("\n--- BATTLE BEGINS! ---\n");
 
   let turn = 1;
   while (p1.currentHp > 0 && p2.currentHp > 0) {
     battleLog.push(`--- Turn ${turn} ---`);
+    battleLog.push(`${p1.name}: ${Math.round(p1.currentHp)}/${p1.stats.hp} HP | ${p2.name}: ${Math.round(p2.currentHp)}/${p2.stats.hp} HP`);
 
-    const [attacker, defender] = p1.stats.speed >= p2.stats.speed ? [p1, p2] : [p2, p1];
+    const [first, second] = p1.stats.speed >= p2.stats.speed ? [p1, p2] : [p2, p1];
 
-    // --- First Pokémon's turn ---
-    if (attacker.currentHp > 0) {
-      performTurn(attacker, defender, battleLog);
-    }
+    if (first.currentHp > 0) performTurn(first, second, battleLog);
+    if (second.currentHp <= 0) break;
+    if (second.currentHp > 0) performTurn(second, first, battleLog);
+    if (first.currentHp <= 0) break;
+    
+    applyEndOfTurnStatus(p1, battleLog);
+    if (p1.currentHp <= 0) break;
+    applyEndOfTurnStatus(p2, battleLog);
+    if (p2.currentHp <= 0) break;
 
-    // --- Second Pokémon's turn (if it hasn't fainted) ---
-    if (defender.currentHp > 0) {
-      performTurn(defender, attacker, battleLog);
-    }
-
+    battleLog.push("");
     turn++;
-    if (turn > 100) break; // Prevent infinite loops
+    if (turn > 50) { battleLog.push("The battle is too long! It's a draw!"); break; }
   }
 
   const winner = p1.currentHp > 0 ? p1 : p2;
   const loser = winner === p1 ? p2 : p1;
   battleLog.push(`${loser.name} has fainted!`);
-  battleLog.push(`\n--- ${winner.name.toUpperCase()} WINS THE BATTLE! ---`);
+  battleLog.push(`\n--- 🏆 ${winner.name.toUpperCase()} WINS THE BATTLE! ---`);
+  
   battleLog.push("\n========================================");
   battleLog.push("🧠 STRATEGIC ANALYSIS");
   battleLog.push("========================================");
-  if (winner.stats.speed > loser.stats.speed) {
-      battleLog.push(`• The winner's higher speed was a key factor, allowing it to control the pace of the battle.`);
-  }
-  battleLog.push(`• The winner's strategic use of its moves and type advantages secured the victory.`);
+  if (winner.stats.speed > loser.stats.speed) battleLog.push(`• Speed was a key factor, allowing ${winner.name} to control the battle's pace.`);
+  if (didHaveTypeAdvantage(winner, loser)) battleLog.push(`• ${winner.name} exploited a type advantage against ${loser.name}.`);
+  battleLog.push(`• With ${Math.round(winner.currentHp)} HP remaining, ${winner.name} secured a decisive victory.`);
 
   return battleLog;
 }
 
-// NEW: A dedicated function to handle a single Pokémon's turn.
 function performTurn(attacker: BattlingPokemon, defender: BattlingPokemon, battleLog: string[]) {
-  // --- Check for status effects before attacking ---
-  if (attacker.status === 'paralysis') {
-    if (Math.random() < 0.25) { // 25% chance to be fully paralyzed
-      battleLog.push(`${attacker.name} is fully paralyzed and can't move!`);
-      return; // Skip the rest of the turn
-    }
+  if (attacker.status === 'paralysis' && Math.random() < 0.25) { battleLog.push(`⚡ ${attacker.name} is fully paralyzed and can't move!`); return; }
+  if (attacker.status === 'sleep') {
+    if (attacker.statusTurns > 0) { battleLog.push(`😴 ${attacker.name} is fast asleep.`); attacker.statusTurns--; return; }
+    battleLog.push(`☀️ ${attacker.name} woke up!`); attacker.status = null;
+  }
+  if (attacker.status === 'freeze') {
+    if (Math.random() < 0.2) { battleLog.push(`🧊 ${attacker.name} thawed out!`); attacker.status = null; } 
+    else { battleLog.push(`🥶 ${attacker.name} is frozen solid!`); return; }
   }
 
-  // Intelligent move selection
   const { moveName, move } = selectMove(attacker, defender);
 
-  battleLog.push(`${attacker.name} used ${moveName}!`);
+  if (defender.abilities.includes('levitate') && move.type === 'ground') { battleLog.push(`✨ ${defender.name}'s Levitate made the attack miss!`); return; }
+  if (defender.abilities.includes('flash-fire') && move.type === 'fire') { battleLog.push(`🔥 ${defender.name}'s Flash Fire absorbed the attack!`); return; }
+  
+  battleLog.push(`🎯 ${attacker.name} used ${moveName}!`);
 
-  // Handle damage-dealing moves
   if (move.power > 0) {
-    const damage = calculateDamage(attacker, defender, move);
-    defender.currentHp -= damage;
-    if (defender.currentHp < 0) defender.currentHp = 0;
-    battleLog.push(`It dealt ${damage.toFixed(0)} damage to ${defender.name}.`);
+    const { damage, effectiveness, isCritical } = calculateDamage(attacker, defender, move);
+    if (isCritical) battleLog.push("💥 A critical hit!");
+    defender.currentHp = Math.max(0, defender.currentHp - damage);
+    if (effectiveness > 1) battleLog.push("🔥 It's super effective!");
+    if (effectiveness < 1 && effectiveness > 0) battleLog.push("🛡️ It's not very effective...");
+    if (effectiveness === 0) battleLog.push("❌ It had no effect!");
+    battleLog.push(`💥 It dealt ${damage} damage to ${defender.name}. (${Math.round(defender.currentHp)} HP left)`);
   }
 
-  // Handle status-effecting moves
   if (move.effect && defender.status === null && move.chance && Math.random() < move.chance) {
     defender.status = move.effect;
-    battleLog.push(`${defender.name} is now ${move.effect}ed!`);
-  }
-
-  battleLog.push(`${defender.name} has ${defender.currentHp.toFixed(0)} HP left.`);
-
-  // --- Apply status damage at the end of the turn ---
-  if (attacker.status === 'burn' || attacker.status === 'poison') {
-    const statusDamage = Math.floor(attacker.stats.hp / 16);
-    attacker.currentHp -= statusDamage;
-    if (attacker.currentHp < 0) attacker.currentHp = 0;
-    battleLog.push(`${attacker.name} is hurt by its ${attacker.status}! It lost ${statusDamage} HP.`);
-    battleLog.push(`${attacker.name} has ${attacker.currentHp.toFixed(0)} HP left.`);
+    if (move.effect === 'sleep') defender.statusTurns = Math.floor(Math.random() * 3) + 1;
+    battleLog.push(`✨ ${defender.name} is now ${move.effect}!`);
   }
 }
 
-/**
- * Calculates the damage one Pokémon does to another with a specific move.
- */
-function calculateDamage(attacker: BattlingPokemon, defender: BattlingPokemon, move: Move): number {
-  const LEVEL = 50; // Standard competitive level
-  let attack = attacker.stats.attack;
-
-  if (attacker.status === 'burn') {
-    attack /= 2;
-  }
-
-  const defense = defender.stats.defense;
-
-  // --- Start of New Formula ---
-  let damage = (((2 * LEVEL / 5 + 2) * move.power * (attack / defense)) / 50) + 2;
-
-  // 1. Add STAB (Same Type Attack Bonus)
-  if (attacker.types.includes(move.type)) {
-    damage *= 1.5;
-  }
-
-  // 2. Type Effectiveness (Your existing logic is good)
-  let effectiveness = 1;
-  const attackType = move.type;
-  if (typeEffectiveness[attackType]) {
-    defender.types.forEach(defenseType => {
-      if (typeEffectiveness[attackType][defenseType] !== undefined) {
-        effectiveness *= typeEffectiveness[attackType][defenseType];
-      }
-    });
-  }
-  damage *= effectiveness;
-
-  // 3. Add Random Variance (85% to 100%)
-  const randomFactor = Math.random() * (1.0 - 0.85) + 0.85;
-  damage *= randomFactor;
-  // --- End of New Formula ---
-
-  // Return final damage, ensuring it's at least 1
-  return Math.max(1, Math.floor(damage));
-}
-
-// Intelligent move selection prioritizing effectiveness and power
-function selectMove(attacker: BattlingPokemon, defender: BattlingPokemon): { moveName: string; move: Move } {
-  const availableMoves = attacker.moves
-    .map(name => ({ name, data: moveData[name] }))
-    .filter(m => m.data && m.data.power > 0); // Only consider damaging moves
-
-  if (availableMoves.length === 0) {
-    // Fallback if no damaging moves are known
-    return { moveName: 'tackle', move: moveData['tackle'] };
-  }
-
-  let bestMove = availableMoves[0];
-  let maxScore = 0;
-
-  for (const potentialMove of availableMoves) {
-    let effectiveness = 1;
-    const attackType = potentialMove.data.type;
-    defender.types.forEach(defenseType => {
-      if (typeEffectiveness[attackType]?.[defenseType] !== undefined) {
-        effectiveness *= typeEffectiveness[attackType][defenseType];
-      }
-    });
-
-    // Score is based on effectiveness first, then power
-    const moveScore = (potentialMove.data.power || 0) * effectiveness;
-
-    if (moveScore > maxScore) {
-      maxScore = moveScore;
-      bestMove = { name: potentialMove.name, data: potentialMove.data } as any;
+function applyEndOfTurnStatus(pokemon: BattlingPokemon, battleLog: string[]) {
+    if (pokemon.status === 'burn') {
+        const damage = Math.floor(pokemon.stats.hp / 16);
+        pokemon.currentHp = Math.max(0, pokemon.currentHp - damage);
+        battleLog.push(`🔥 ${pokemon.name} is hurt by its burn! (${damage} damage)`);
     }
-  }
-  return { moveName: (bestMove as any).name, move: (bestMove as any).data };
+    if (pokemon.status === 'poison') {
+        const damage = Math.floor(pokemon.stats.hp / 8);
+        pokemon.currentHp = Math.max(0, pokemon.currentHp - damage);
+        battleLog.push(`☠️ ${pokemon.name} is hurt by poison! (${damage} damage)`);
+    }
+}
+
+function calculateDamage(attacker: BattlingPokemon, defender: BattlingPokemon, move: Move): { damage: number, effectiveness: number, isCritical: boolean } {
+  const LEVEL = 50;
+  let attack = attacker.stats.attack;
+  if (attacker.status === 'burn') attack /= 2;
+  const defense = defender.stats.defense;
+  let baseDamage = ((((2 * LEVEL / 5 + 2) * move.power * (attack / defense)) / 50) + 2);
+  const isCritical = Math.random() < (1 / 24);
+  if (isCritical) baseDamage *= 1.5;
+  if (attacker.types.includes(move.type)) baseDamage *= 1.5;
+  let effectiveness = 1;
+  defender.types.forEach(defenseType => { effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1; });
+  baseDamage *= effectiveness;
+  baseDamage *= (Math.random() * (1.0 - 0.85) + 0.85);
+  const finalDamage = Math.max(1, Math.floor(baseDamage));
+  return { damage: finalDamage, effectiveness, isCritical };
+}
+
+function handleEntryAbilities(pokemon: BattlingPokemon, opponent: BattlingPokemon, battleLog: string[]) {
+    if (pokemon.abilities.includes('intimidate')) {
+        battleLog.push(`😱 ${pokemon.name}'s Intimidate lowered ${opponent.name}'s Attack!`);
+    }
+}
+
+function selectMove(attacker: BattlingPokemon, defender: BattlingPokemon): { moveName: string; move: Move } {
+    const availableMoves = attacker.moves.map(name => ({ name, data: moveData[name] })).filter(m => m.data);
+    if (availableMoves.length === 0) return { moveName: 'struggle', move: { power: 50, type: 'normal' } };
+    let bestMove = availableMoves[0];
+    let maxScore = -1;
+    for (const potentialMove of availableMoves) {
+        let score = 0;
+        if (potentialMove.data.power > 0) {
+            let effectiveness = 1;
+            defender.types.forEach(defenseType => { effectiveness *= typeEffectiveness[potentialMove.data.type]?.[defenseType] ?? 1; });
+            score = potentialMove.data.power * effectiveness;
+        } else if (potentialMove.data.effect && defender.status === null) { score = 40; }
+        if (score > maxScore) { maxScore = score; bestMove = potentialMove; }
+    }
+    return { moveName: bestMove.name, move: bestMove.data };
+}
+
+function didHaveTypeAdvantage(winner: Pokemon, loser: Pokemon): boolean {
+    for (const moveName of winner.moves) {
+        const move = moveData[moveName];
+        if (move && move.power > 0) {
+            let effectiveness = 1;
+            loser.types.forEach(defenseType => { effectiveness *= typeEffectiveness[move.type]?.[defenseType] ?? 1; });
+            if (effectiveness > 1) return true;
+        }
+    }
+    return false;
 }

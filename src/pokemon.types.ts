@@ -15,13 +15,15 @@ export interface Pokemon {
   abilities: string[];
   moves: string[];
   evolution: EvolutionInfo;
+  sprites: {
+    front_default: string | null;
+  };
 }
 
 export interface EvolutionInfo {
-  /** Immediate pre-evolution species name, if any */
   evolvesFrom: string | null;
-  /** Immediate next evolutions' species names (could be multiple branches) */
   evolvesTo: string[];
-  /** All species in the full evolution chain (flattened, order by traversal) */
   chain: string[];
 }
+
+export type StatusEffect = 'paralysis' | 'burn' | 'poison' | 'sleep' | 'freeze' | null;
