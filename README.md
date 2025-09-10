@@ -110,12 +110,24 @@ Deliverables (Part 1)
 - Source code for the MCP server and Pokémon resource: `src/server.ts`, `src/data/pokemonData.ts`, `src/types/*`
 - Documentation (this README) describing the exposed data and URIs
 - Query examples for LLM usage
+<img width="750" alt="Screenshot 2025-09-11 044024" src="https://github.com/user-attachments/assets/977aec02-82c7-475e-bae5-83884d18d573" />
+<img width="720" alt="Screenshot 2025-09-11 044220" src="https://github.com/user-attachments/assets/a645d018-f76a-4268-9723-8841357fd66d" />
+<img width="740" alt="Screenshot 2025-09-11 044434" src="https://github.com/user-attachments/assets/8efb8b2d-8304-4909-b12c-549c1affe80e" />
+<img width="740" alt="Screenshot 2025-09-11 044434" src="https://github.com/user-attachments/assets/a476b7eb-0d17-48e8-b36b-fe058d070240" />
+<img width="760" alt="Screenshot 2025-09-11 044519" src="https://github.com/user-attachments/assets/5c117442-eb4a-42d7-9665-cfb5e37bada3" />
 
 ---
 
 ## Part 2: Battle Simulation Tool
 
 Design: An MCP tool `simulate_battle` that accepts two Pokémon and optional options. Implemented with `BattleEngine` in `src/battle/battleEngine.ts` and exposed from `src/server.ts` via `tools/list` and `tools/call`.
+
+<img width="750" alt="Screenshot 2025-09-11 044615" src="https://github.com/user-attachments/assets/e19f-451b-87ab-7bc7ebb99de9" />
+<img width="740" alt="Screenshot 2025-09-11 044708" src="https://github.com/user-attachments/assets/a299cb55-0d4d-4854-b8c5-66a17845cd55" />
+<img width="720" alt="Screenshot 2025-09-11 044717" src="https://github.com/user-attachments/assets/65f1337a-3cbd-4eb9-9286-60fbdf5485ca" />
+<img width="740" alt="Screenshot 2025-09-11 044801" src="https://github.com/user-attachments/assets/cc1c3cb3-d46c-4da6-be64-53e7fbfad21b" />
+<img width="730" alt="Screenshot 2025-09-11 044809" src="https://github.com/user-attachments/assets/6562518b-7475-447c-be6f-372af04f4bed" />
+
 
 Core mechanics
 
