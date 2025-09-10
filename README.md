@@ -122,7 +122,7 @@ Deliverables (Part 1)
 
 Design: An MCP tool `simulate_battle` that accepts two Pokémon and optional options. Implemented with `BattleEngine` in `src/battle/battleEngine.ts` and exposed from `src/server.ts` via `tools/list` and `tools/call`.
 
-<img width="750" alt="Screenshot 2025-09-11 044615" src="https://github.com/user-attachments/assets/e19f-451b-87ab-7bc7ebb99de9" />
+<img width="750" height="1128" alt="Screenshot 2025-09-11 044615" src="https://github.com/user-attachments/assets/da09e628-7639-479c-8ca6-055b39547410" />
 <img width="740" alt="Screenshot 2025-09-11 044708" src="https://github.com/user-attachments/assets/a299cb55-0d4d-4854-b8c5-66a17845cd55" />
 <img width="720" alt="Screenshot 2025-09-11 044717" src="https://github.com/user-attachments/assets/65f1337a-3cbd-4eb9-9286-60fbdf5485ca" />
 <img width="740" alt="Screenshot 2025-09-11 044801" src="https://github.com/user-attachments/assets/cc1c3cb3-d46c-4da6-be64-53e7fbfad21b" />
