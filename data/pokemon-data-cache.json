@@ -1,0 +1,131 @@
+[
+  {
+    "id": 25,
+    "name": "pikachu",
+    "types": [
+      "electric"
+    ],
+    "baseStats": {
+      "hp": 35,
+      "attack": 55,
+      "defense": 40,
+      "specialAttack": 50,
+      "specialDefense": 50,
+      "speed": 90
+    },
+    "abilities": [
+      {
+        "name": "static",
+        "description": "static",
+        "isHidden": false
+      },
+      {
+        "name": "lightning-rod",
+        "description": "lightning-rod",
+        "isHidden": true
+      }
+    ],
+    "moves": [
+      {
+        "name": "mega-punch",
+        "type": "electric",
+        "category": "physical",
+        "power": 50,
+        "accuracy": 95,
+        "pp": 35
+      },
+      {
+        "name": "pay-day",
+        "type": "electric",
+        "category": "physical",
+        "power": 50,
+        "accuracy": 95,
+        "pp": 35
+      },
+      {
+        "name": "thunder-punch",
+        "type": "electric",
+        "category": "physical",
+        "power": 50,
+        "accuracy": 95,
+        "pp": 35
+      },
+      {
+        "name": "slam",
+        "type": "electric",
+        "category": "physical",
+        "power": 50,
+        "accuracy": 95,
+        "pp": 35
+      }
+    ],
+    "height": 4,
+    "weight": 60,
+    "species": "pikachu"
+  },
+  {
+    "id": 6,
+    "name": "charizard",
+    "types": [
+      "fire",
+      "flying"
+    ],
+    "baseStats": {
+      "hp": 78,
+      "attack": 84,
+      "defense": 78,
+      "specialAttack": 109,
+      "specialDefense": 85,
+      "speed": 100
+    },
+    "abilities": [
+      {
+        "name": "blaze",
+        "description": "blaze",
+        "isHidden": false
+      },
+      {
+        "name": "solar-power",
+        "description": "solar-power",
+        "isHidden": true
+      }
+    ],
+    "moves": [
+      {
+        "name": "mega-punch",
+        "type": "fire",
+        "category": "physical",
+        "power": 50,
+        "accuracy": 95,
+        "pp": 35
+      },
+      {
+        "name": "fire-punch",
+        "type": "fire",
+        "category": "physical",
+        "power": 50,
+        "accuracy": 95,
+        "pp": 35
+      },
+      {
+        "name": "thunder-punch",
+        "type": "fire",
+        "category": "physical",
+        "power": 50,
+        "accuracy": 95,
+        "pp": 35
+      },
+      {
+        "name": "scratch",
+        "type": "fire",
+        "category": "physical",
+        "power": 50,
+        "accuracy": 95,
+        "pp": 35
+      }
+    ],
+    "height": 17,
+    "weight": 905,
+    "species": "charizard"
+  }
+]

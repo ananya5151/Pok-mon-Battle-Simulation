@@ -1,2 +1,29 @@
+# Dependencies
 node_modules/
-/dist
+
+# Build output
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+
+# Jest cache
+coverage/
+.jest-cache/
+.jest/**
+ 
+# Ignore compiled test artifacts
+tests/**/*.js
+tests/**/*.d.ts
+tests/**/*.map
+
+# VS Code
+.vscode/

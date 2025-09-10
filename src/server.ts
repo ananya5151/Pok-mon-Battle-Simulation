@@ -1,161 +1,196 @@
-// src/server.ts
+import { Server } from '@modelcontextprotocol/sdk/server';
+import { logger } from './utils/logger';
+import { PokemonDataService } from './data/pokemonData';
+import { BattleEngine } from './battle/battleEngine';
+import { z } from 'zod';
+// We'll load StdioServerTransport at runtime to avoid export-map issues
+import { interpretCommand } from './utils/llm';
 
-import * as readline from 'readline';
-import { getPokemonData } from './services/pokeapi.service';
-import { handleBattleSimulator, handleGetPokemon, handleGetTypeEffectiveness } from './services/tool.handler';
-import { Pokemon } from './pokemon.types';
-import { config } from './config';
+export class PokemonMCPServer {
+    private server: Server;
+    private data = new PokemonDataService();
+    private engine = new BattleEngine(Number(process.env.MOVE_POOL_SIZE) || 8);
 
-interface MCPRequest {
-  jsonrpc: "2.0";
-  method: string;
-  params?: any;
-  id: string | number;
-}
-
-function sendResponse(id: string | number, result: any, error: any = null) {
-  const response = {
-    jsonrpc: "2.0",
-    id,
-    ...(error ? { error } : { result }),
-  };
-  process.stdout.write(JSON.stringify(response) + '\n');
-}
-
-function formatPokemonDataForDisplay(pokemon: Pokemon): string {
-    const totalStats = pokemon.stats.hp + pokemon.stats.attack + pokemon.stats.defense + pokemon.stats.specialAttack + pokemon.stats.specialDefense + pokemon.stats.speed;
-    let response = `🌟 **${pokemon.name.toUpperCase()}** (#${pokemon.id})\n`;
-    if (pokemon.sprites.front_default) {
-        response += `Image: ${pokemon.sprites.front_default}\n`;
-    }
-    response += `\n🏷️ **Type:** ${pokemon.types.join(' / ')}\n\n`;
-    response += `📊 **Base Stats:**\n`;
-    response += `   ❤️ HP: ${pokemon.stats.hp}\n`;
-    response += `   ⚔️ Attack: ${pokemon.stats.attack}\n`;
-    response += `   🛡️ Defense: ${pokemon.stats.defense}\n`;
-    response += `   🔮 Sp. Attack: ${pokemon.stats.specialAttack}\n`;
-    response += `   🛡️ Sp. Defense: ${pokemon.stats.specialDefense}\n`;
-    response += `   💨 Speed: ${pokemon.stats.speed}\n`;
-    response += `   📈 **Total: ${totalStats}**\n\n`;
-    response += `⚡ **Abilities:** ${pokemon.abilities.join(', ')}\n\n`;
-    response += `🌀 **Evolution Chain:** ${pokemon.evolution.chain.join(' -> ')}\n`;
-    return response;
-}
-
-async function handleMCPRequest(mcpRequest: MCPRequest) {
-  const { method, params, id } = mcpRequest;
-
-  try {
-    switch (method) {
-      case 'initialize':
-        return sendResponse(id, { protocolVersion: config.server.mcpVersion, serverInfo: { name: config.server.serverName, version: config.server.serverVersion } });
-      
-      case 'resources.list':
-        return sendResponse(id, {
-            resources: [
-                { uri: "pokemon://database", name: "Pokemon Database", description: "Access to comprehensive Pokémon data including stats, types, abilities, and moves." },
-                { uri: "pokemon://types", name: "Type Effectiveness Chart", description: "Pokémon type effectiveness multipliers for battle calculations." }
-            ]
+    constructor() {
+        this.server = new Server({
+            name: 'pokemon-battle-server',
+            version: '1.0.0',
+            description: 'A Pokémon battle simulation MCP server',
         });
 
-      case 'resources.read': {
-        const { uri } = params;
-        const pokemonName = uri.split('/').pop();
-        if (!pokemonName) return sendResponse(id, null, { code: -32602, message: "Invalid URI" });
-        const pokemonData = await getPokemonData(pokemonName);
-        if (!pokemonData) return sendResponse(id, null, { code: -32601, message: `Pokemon '${pokemonName}' not found.` });
-        const text = formatPokemonDataForDisplay(pokemonData);
-        return sendResponse(id, { contents: [{ uri, mimeType: "text/plain", text }] });
-      }
+        this.setupHandlers();
+    }
 
-      case 'tools.list':
-        return sendResponse(id, {
-            tools: [
-                {
-                    name: "get_pokemon",
-                    description: "Fetch comprehensive data for a specific Pokémon by name or ID.",
-                    inputSchema: {
-                        type: "object",
-                        properties: {
-                            name: { type: "string", description: "The name or ID of the Pokémon." }
+    private setupHandlers() {
+        // Register capabilities
+        this.server.registerCapabilities({ resources: {}, tools: {} });
+
+        // List resources
+        this.server.setRequestHandler(z.object({ method: z.literal('resources/list'), params: z.any().optional() }) as any, async () => {
+            return {
+                resources: [
+                    { name: 'types', uri: 'pokemon://types' },
+                    { name: 'list', uri: 'pokemon://list' },
+                    { name: 'data', uri: 'pokemon://data/{name}' },
+                    { name: 'stats', uri: 'pokemon://stats/{name}' },
+                    { name: 'moves', uri: 'pokemon://moves/{name}' },
+                ]
+            } as any;
+        });
+
+        // Read resource
+        this.server.setRequestHandler(z.object({ method: z.literal('resources/read'), params: z.any() }) as any, async (req: any) => {
+            const url = new URL(req.params.uri);
+            const type = url.host;
+            const identifier = url.pathname.replace(/^\//, '');
+            if (type === 'types') {
+                return { contents: [{ uri: req.params.uri, mimeType: 'application/json', text: JSON.stringify(['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy']) }] } as any;
+            }
+            if (type === 'list') {
+                const list = (await this.data.getAllPokemon(50)).map((p) => p.name);
+                return { contents: [{ uri: req.params.uri, mimeType: 'application/json', text: JSON.stringify(list) }] } as any;
+            }
+            if (type === 'data') {
+                const p = await this.data.getPokemon(identifier);
+                return { contents: [{ uri: req.params.uri, mimeType: 'application/json', text: JSON.stringify(p) }] } as any;
+            }
+            if (type === 'stats') {
+                const p = await this.data.getPokemon(identifier);
+                return { contents: [{ uri: req.params.uri, mimeType: 'application/json', text: JSON.stringify(p.baseStats) }] } as any;
+            }
+            if (type === 'moves') {
+                const p = await this.data.getPokemon(identifier);
+                return { contents: [{ uri: req.params.uri, mimeType: 'application/json', text: JSON.stringify(p.moves) }] } as any;
+            }
+            throw new Error(`Unknown resource type: ${type}`);
+        });
+
+        // Tools list
+        this.server.setRequestHandler(z.object({ method: z.literal('tools/list'), params: z.any().optional() }) as any, async () => {
+            return {
+                tools: [
+                    {
+                        name: 'simulate_battle',
+                        description: 'Simulate a battle between two Pokémon',
+                        inputSchema: {
+                            type: 'object',
+                            properties: {
+                                pokemon1: { type: 'string', description: 'Name or ID of first Pokémon' },
+                                pokemon2: { type: 'string', description: 'Name or ID of second Pokémon' },
+                                options: { type: 'object', properties: { level: { type: 'number' }, maxTurns: { type: 'number' }, seed: { type: ['string', 'number'] as any, description: 'Seed for deterministic RNG' } } },
+                            },
+                            required: ['pokemon1', 'pokemon2'],
                         },
-                        required: ["name"]
-                    }
-                },
-                {
-                    name: "battle_simulate",
-                    description: "Simulate a battle between two Pokémon.",
-                    inputSchema: {
-                        type: "object",
-                        properties: {
-                            pokemon1: { type: "string", description: "The name of the first Pokémon." },
-                            pokemon2: { type: "string", description: "The name of the second Pokémon." }
+                    },
+                    {
+                        name: 'natural_command',
+                        description: 'Parse a human command like "battle pikachu vs charizard" or "stats bulbasaur" and execute it',
+                        inputSchema: {
+                            type: 'object',
+                            properties: {
+                                command: { type: 'string', description: 'Human command about Pokémon' },
+                            },
+                            required: ['command'],
                         },
-                        required: ["pokemon1", "pokemon2"]
-                    }
-                },
-                {
-                    name: "get_type_effectiveness",
-                    description: "Get type effectiveness information for battle strategy.",
-                    inputSchema: {
-                        type: "object",
-                        properties: {
-                            attacking_type: { type: "string", description: "The attacking type." },
-                            defending_types: { type: "array", items: { type: "string" }, description: "The defending types." }
-                        },
-                        required: ["attacking_type", "defending_types"]
+                    },
+                ]
+            } as any;
+        });
+
+        // Tools call
+        this.server.setRequestHandler(z.object({ method: z.literal('tools/call'), params: z.any() }) as any, async (req: any) => {
+            const toolName = req.params?.name;
+            if (toolName === 'simulate_battle') {
+                const { pokemon1, pokemon2, options } = req.params.arguments || {};
+                const p1 = await this.data.getPokemon(pokemon1);
+                const p2 = await this.data.getPokemon(pokemon2);
+                const level = options?.level ?? 50;
+                const maxTurns = options?.maxTurns ?? 300;
+                const seed = options?.seed;
+                const result = await this.engine.simulateBattle(p1, p2, maxTurns, level, seed);
+                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] } as any;
+            }
+            if (toolName === 'natural_command') {
+                const { command } = req.params.arguments || {};
+                const response = await this.handleNaturalCommand(String(command || ''));
+                return { content: [{ type: 'text', text: response }] } as any;
+            }
+            throw new Error('Unknown tool');
+        });
+    }
+
+    private async handleNaturalCommand(command: string): Promise<string> {
+        const intent = await interpretCommand(command);
+        if (intent.intent === 'battle') {
+            const p1 = await this.data.getPokemon(intent.pokemon1);
+            const p2 = await this.data.getPokemon(intent.pokemon2);
+            const result = await this.engine.simulateBattle(p1, p2, 300, 50, undefined);
+            return JSON.stringify(result, null, 2);
+        }
+        if (intent.intent === 'stats') {
+            const p = await this.data.getPokemon(intent.name);
+            return JSON.stringify(p.baseStats, null, 2);
+        }
+        if (intent.intent === 'moves') {
+            const p = await this.data.getPokemon(intent.name);
+            const count = intent.count && intent.count > 0 ? intent.count : p.moves.length;
+            return JSON.stringify(p.moves.slice(0, count), null, 2);
+        }
+        if (intent.intent === 'types') {
+            const types = ['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'];
+            return JSON.stringify(types, null, 2);
+        }
+        if (intent.intent === 'info') {
+            const p = await this.data.getPokemon(intent.name);
+            return JSON.stringify(p, null, 2);
+        }
+        return 'Unrecognized command. Try: "battle pikachu vs charizard", "stats bulbasaur", or "moves charizard"';
+    }
+
+    async run() {
+        // Resolve absolute path to stdio transport to dodge export-map differences
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const path = require('path');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fs = require('fs');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const pkgPath = require.resolve('@modelcontextprotocol/sdk/package.json');
+        const base = path.dirname(pkgPath);
+        const up1 = path.dirname(base);
+        const up2 = path.dirname(up1);
+        const candidates = [
+            // When package.json is at dist/cjs or dist/esm
+            path.join(base, 'server', 'stdio.js'),
+            // When package.json is at dist/* level
+            path.join(up1, 'cjs', 'server', 'stdio.js'),
+            path.join(up1, 'esm', 'server', 'stdio.js'),
+            // When package.json is at package root
+            path.join(base, 'dist', 'cjs', 'server', 'stdio.js'),
+            path.join(base, 'dist', 'esm', 'server', 'stdio.js'),
+            // Fallbacks from one more level up
+            path.join(up2, 'dist', 'cjs', 'server', 'stdio.js'),
+            path.join(up2, 'dist', 'esm', 'server', 'stdio.js'),
+        ];
+        let TransportCtor: any = null;
+        for (const p of candidates) {
+            try {
+                if (fs.existsSync(p)) {
+                    // eslint-disable-next-line import/no-dynamic-require, global-require
+                    const mod = require(p);
+                    TransportCtor = mod.StdioServerTransport || mod.default || null;
+                    if (TransportCtor) {
+                        break;
                     }
                 }
-            ]
-        });
-
-      case 'tools.call': {
-        const { name, arguments: toolArgs } = params;
-        let result;
-        switch (name) {
-          case "get_pokemon":
-            result = await handleGetPokemon(toolArgs);
-            break;
-          case "battle_simulate":
-            result = await handleBattleSimulator(toolArgs);
-            break;
-          case "get_type_effectiveness":
-            result = await handleGetTypeEffectiveness(toolArgs);
-            break;
-          default:
-            return sendResponse(id, null, { code: -32601, message: `Tool '${name}' not found.` });
+            } catch {
+                // try next
+            }
         }
-        if (result.error) {
-            return sendResponse(id, null, { code: -32603, message: result.error });
+        if (!TransportCtor) {
+            throw new Error('Unable to locate StdioServerTransport in @modelcontextprotocol/sdk');
         }
-        return sendResponse(id, { content: [{ type: "text", text: result.text }] });
-      }
-      default:
-        return sendResponse(id, null, { code: -32601, message: `Method '${method}' not found.` });
+        const transport: any = new TransportCtor();
+        await (this.server as any).connect(transport);
+        logger.info('Pokemon MCP Server is running (stdio)');
     }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Internal server error";
-    sendResponse(id, null, { code: -32603, message: errorMessage });
-  }
 }
-
-function main() {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: false
-  });
-
-  rl.on('line', (line) => {
-    try {
-      if (line.trim()) {
-          const request = JSON.parse(line);
-          handleMCPRequest(request);
-      }
-    } catch (e) {
-      sendResponse('unknown', null, { code: -32700, message: 'Parse error' });
-    }
-  });
-}
-
-main();

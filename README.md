@@ -1,467 +1,222 @@
-# Pokémon Battle Simulation - MCP Server
+# Pokémon MCP: Data Resource + Battle Simulation
 
-## Overview
-This project is a Model Context Protocol (MCP) compliant server that provides comprehensive Pokémon data access and advanced battle simulation capabilities. It features an intelligent terminal client that uses natural language processing to understand user commands and orchestrate complex queries.
+A real MCP stdio server that exposes rich Pokémon data as MCP resources and a deterministic battle simulator as an MCP tool. Built in TypeScript and wired for Claude Desktop on Windows.
 
-## Project Architecture
+## Start here: Claude Desktop (Windows) MCP connection
 
-### Core Components
-- **MCP Server** (`src/server.ts`): Implements the full MCP specification with resources and tools
-- **Intelligent Client** (`terminal_client.py`): Python-based terminal interface with NLP capabilities
-- **Battle Engine** (`src/tool/battle.service.ts`): Advanced battle simulation with real Pokémon mechanics
-- **Data Service** (`src/services/pokeapi.service.ts`): PokeAPI integration with caching
+1) Build and start once to verify stdio
+
+```powershell
+npm install ; npm run build ; npm start
+# Expect in the console (stderr): "Pokemon MCP Server is running (stdio)"
+# Press Ctrl+C to stop after confirming
+```
+
+1) Auto-configure Claude Desktop
+
+```powershell
+npm run configure:claude
+```
+
+This writes `%APPDATA%\Claude\claude_desktop_config.json` pointing to your absolute Node path and `dist/index.js`.
+
+1) Restart Claude Desktop and validate connection
+
+- Ask: “List available tools” → expect `simulate_battle` and `natural_command`.
+- Ask: “resources/list” or “What Pokémon resources do you expose?” → you should see `pokemon://types`, `pokemon://list`, `pokemon://data/{name}`, `pokemon://stats/{name}`, `pokemon://moves/{name}`.
+- Optional: run a deterministic battle → “battle pikachu vs charizard seed 12345 level 50”.
+
+If Claude shows a JSON parse error, rebuild (`npm run build`) and ensure the server printed the stdio banner above; logging is already routed to stderr to keep MCP stdout clean.
+
+## Where is the MCP connection and logic in this repo?
+
+- MCP stdio server and connection: `src/server.ts` (registers resources/tools; connects over stdio using a dynamic transport resolver), `src/index.ts` (starts the server)
+- Part 1 (Data Resource): `src/data/pokemonData.ts` (PokeAPI + cache + evolution), `src/types/pokemon.ts` (schemas); resource URIs handled in `src/server.ts`
+- Part 2 (Battle Tool): `src/battle/battleEngine.ts`, `src/battle/damageCalculator.ts`, `src/battle/typeEffectiveness.ts`, `src/battle/statusEffects.ts`
+- Deterministic RNG + logging: `src/utils/rng.ts`, `src/utils/logger.ts` (stderr-only)
+- Natural-language and CLI: `src/utils/llm.ts`, `src/cli.ts`
+- Claude Desktop config helper (Windows/macOS/Linux aware): `scripts/configure-claude.js`
+
+## At a glance
+
+- Part 1 (Data Resource): Pokémon base stats, types, abilities, moves (with power/accuracy/type/PP/category and common status effects), and evolution info; exposed via `pokemon://...` MCP resources ready for LLMs.
+- Part 2 (Battle Tool): Deterministic simulator with type effectiveness, physical/special damage, turn order by Speed, status effects (Paralysis, Burn, Poison, Sleep, Freeze, Confusion, Flinch), PP/accuracy, per-turn logs, and a clear winner; exposed via MCP tools.
 
 ---
 
-## Get Pokémon Info
-<img width="779" height="910" alt="Screenshot 2025-09-09 035324" src="https://github.com/user-attachments/assets/1f6d541c-02ce-40f3-9c97-45598faf101c" />
-<img width="746" height="638" alt="Screenshot 2025-09-09 035335" src="https://github.com/user-attachments/assets/6f5abd43-ffb8-4bbd-ab89-ce7a09b18fee" />
+## Install and run
 
+```powershell
+npm install ; npm run build ; npm start
+```
 
-## Simulate a Battle
-<img width="739" height="862" alt="Screenshot 2025-09-09 035348" src="https://github.com/user-attachments/assets/8b4c2623-647b-461c-bdd4-8f3a6593f990" />
-<img width="768" height="687" alt="Screenshot 2025-09-09 035358" src="https://github.com/user-attachments/assets/f1fbc8cc-b0bc-4a5f-9168-424b644b9920" />
+Expected: the server prints to stderr
 
+```text
+[info] Pokemon MCP Server is running (stdio)
+```
 
-## Analyze Type Weaknesses
-<img width="587" height="161" alt="Screenshot 2025-09-09 035413" src="https://github.com/user-attachments/assets/dd4966e5-6df5-4b7d-a5c4-c8310879b783" />
-<img width="531" height="347" alt="Screenshot 2025-09-09 035431" src="https://github.com/user-attachments/assets/9d752dc0-89e7-491a-aadb-f717e77dbd4a" />
+Stop with Ctrl+C.
 
+Optional CLI (natural language):
+
+```powershell
+npm run build ; npm run cli -- "battle pikachu vs charizard" --level 50 --seed 12345 --maxTurns 200
+```
+
+---
 
 ## Part 1: Pokémon Data Resource
 
-### Implementation Details
+Design: An MCP resource namespace `pokemon://` that LLMs can browse and fetch. Implemented in `src/server.ts` with a `PokemonDataService` (`src/data/pokemonData.ts`) backed by PokeAPI and a local JSON cache at `data/pokemon-data-cache.json`.
 
-#### MCP Resource Design
-The server implements the `resources.*` methods as specified by MCP:
+What’s exposed
 
-**Available Resources:**
-- `pokemon://database` - Access to comprehensive Pokémon database
-- `pokemon://types` - Type effectiveness chart for battle calculations
+- Base stats: HP, Attack, Defense, Special Attack, Special Defense, Speed
+- Types: full 18-type set
+- Abilities: name, hidden flag (description is placeholder)
+- Moves: up to 12 stronger/reliable moves with fields: name, type, category, power, accuracy, pp, effects (burn/poison/paralysis/sleep/freeze/confusion/flinch when available from move meta)
+- Evolution: next evolution target and level (if present) via species → evolution chain
 
-#### Resource Access Methods
+Resources
 
-**1. Resource Listing (`resources.list`)**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "resources.list",
-  "id": 1
-}
-```
+- `pokemon://types` → JSON array of all Pokémon types
+- `pokemon://list` → JSON array of names (first 50 by default)
+- `pokemon://data/{name}` → full Pokémon JSON (stats, types, abilities, moves, evolution, height/weight/species)
+- `pokemon://stats/{name}` → base stats only
+- `pokemon://moves/{name}` → selected move list only
 
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "resources": [
-      {
-        "uri": "pokemon://database",
-        "name": "Pokemon Database",
-        "description": "Access to comprehensive Pokémon data including stats, types, abilities, and moves."
-      },
-      {
-        "uri": "pokemon://types",
-        "name": "Type Effectiveness Chart",
-        "description": "Pokémon type effectiveness multipliers for battle calculations."
-      }
-    ]
-  }
-}
-```
+MCP resource design patterns observed
 
-**2. Resource Reading (`resources.read`)**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "resources.read",
-  "params": {
-    "uri": "pokemon://database/charizard"
-  },
-  "id": 2
-}
-```
+- Deterministic URIs and stable schemas for LLMs
+- `resources/list` enumerates the available “templates” and sample entries
+- `resources/read` returns a single JSON payload (mimeType `application/json`)
 
-#### Comprehensive Pokémon Data Structure
-Each Pokémon resource exposes:
+Example LLM queries
 
-```typescript
-interface Pokemon {
-  id: number;
-  name: string;
-  stats: {
-    hp: number;
-    attack: number;
-    defense: number;
-    specialAttack: number;
-    specialDefense: number;
-    speed: number;
-  };
-  types: string[];           // e.g., ["fire", "flying"]
-  abilities: string[];       // e.g., ["blaze", "solar power"]
-  moves: Move[];            // Available moves with effects
-  evolution: EvolutionInfo; // Complete evolution chain
-  sprites: {
-    front_default: string | null;
-  };
-}
-```
+- “Read pokemon://stats/pikachu to compare Speed.”
+- “Read pokemon://moves/charizard and pick a strong special Fire move.”
+- “Read pokemon://data/bulbasaur and summarize evolution info.”
+- “Read pokemon://types and explain which beat Fire.”
 
-#### Move Data with Status Effects
-```typescript
-interface Move {
-  name: string;
-  power: number | null;
-  type: string;
-  accuracy: number | null;
-  category: 'physical' | 'special' | 'status';
-  effect?: StatusEffectName;  // paralysis, burn, poison, sleep, freeze
-  chance?: number;            // Probability of effect (0-1)
-}
-```
+Developer pointers
 
-#### Evolution Information
-```typescript
-interface EvolutionInfo {
-  evolvesFrom: string | null;
-  evolvesTo: string[];
-  chain: string[];  // Complete evolution chain
-}
-```
+- Data service: `src/data/pokemonData.ts`
+- Types: `src/types/pokemon.ts`
+- Resource routing: in `src/server.ts` under `resources/list` and `resources/read`
 
-### LLM Query Examples
+Deliverables (Part 1)
 
-**Example 1: Get Pokémon Info**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools.call",
-  "params": {
-    "name": "get_pokemon",
-    "arguments": {
-      "name": "charizard"
-    }
-  },
-  "id": 1
-}
-```
-
-**Example 2: Access Resource Directly**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "resources.read",
-  "params": {
-    "uri": "pokemon://database/pikachu"
-  },
-  "id": 2
-}
-```
+- Source code for the MCP server and Pokémon resource: `src/server.ts`, `src/data/pokemonData.ts`, `src/types/*`
+- Documentation (this README) describing the exposed data and URIs
+- Query examples for LLM usage
 
 ---
 
 ## Part 2: Battle Simulation Tool
 
-### Implementation Details
+Design: An MCP tool `simulate_battle` that accepts two Pokémon and optional options. Implemented with `BattleEngine` in `src/battle/battleEngine.ts` and exposed from `src/server.ts` via `tools/list` and `tools/call`.
 
-#### MCP Tool Interface
-The battle simulator is exposed via the `tools.*` methods:
+Core mechanics
 
-**Tool Registration (`tools.list`)**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools.list",
-  "id": 1
-}
-```
+- Type effectiveness: full 18-type chart in `src/battle/typeEffectiveness.ts` and applied in damage
+- Damage: physical/special split using move category, scaled by level; STAB included
+- Turn order: fastest goes first (tie favors first Pokémon)
+- Status effects: at least 3 implemented (we include Paralysis, Burn, Poison, plus Sleep, Freeze, Confusion, Flinch)
+- Accuracy and PP: moves consume PP; misses are handled; struggle fallback when no PP
+- Deterministic RNG: seeded PRNG for repeatable simulations; seed exposed in result
+- Logs: per-turn, per-action messages plus a compact HP summary each turn
 
-**Available Tools:**
-1. `battle_simulate` - Core battle simulation
-2. `get_pokemon` - Pokémon data access
-3. `get_type_effectiveness` - Type matchup analysis
+Tool schema
 
-#### Battle Mechanics Implementation
+- Name: `simulate_battle`
+- Input schema:
+ 	- `pokemon1`: string
+ 	- `pokemon2`: string
+ 	- `options` (optional):
+  		- `level`: number (default 50)
+  		- `maxTurns`: number (default 300)
+  		- `seed`: string | number (for deterministic runs)
 
-**1. Type Effectiveness Calculations**
-- Complete 18x18 type effectiveness chart
-- Handles dual-type Pokémon correctly
-- Supports all type interactions (2x, 0.5x, 0x effects)
+Output shape (JSON)
 
-**2. Damage Calculation Formula**
-```typescript
-damage = (((2 * level / 5 + 2) * power * (attack / defense)) / 50) + 2
-```
-Includes:
-- STAB (Same Type Attack Bonus): 1.5x multiplier
-- Critical hits: 1.5x multiplier (1/24 chance)
-- Type effectiveness multipliers
-- Random factor (85%-100%)
+- `winner`: string | 'draw'
+- `battleLog`: array of turns; each turn has actions and HP snapshot
+- `turns`: total turns simulated
+- `seed`: echoed seed used
 
-**3. Turn Order Determination**
-- Based on Speed stats
-- Faster Pokémon attacks first
-- Status effects can prevent actions
+Examples (LLM/tool calls)
 
-**4. Status Effects Implementation**
-Supports 5+ status effects:
-- **Paralysis**: 25% chance to skip turn, reduces speed
-- **Burn**: Deals 1/16 max HP damage per turn, halves physical attack
-- **Poison**: Deals 1/8 max HP damage per turn
-- **Sleep**: Pokémon cannot act for 1-3 turns
-- **Freeze**: 20% chance to thaw each turn
+- “Call simulate_battle with { pokemon1: 'pikachu', pokemon2: 'charizard', options: { level: 50, seed: 12345 } }.”
+- “Natural: battle charizard vs blastoise level 70 seed 42 turns 200.”
 
-#### Battle Simulation Tool Usage
+Developer pointers
 
-**Tool Call Example:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools.call",
-  "params": {
-    "name": "battle_simulate",
-    "arguments": {
-      "pokemon1": "charizard",
-      "pokemon2": "blastoise"
-    }
-  },
-  "id": 1
-}
-```
+- Engine: `src/battle/battleEngine.ts`
+- Damage: `src/battle/damageCalculator.ts`
+- Status: `src/battle/statusEffects.ts`
+- Tool exposure: `src/server.ts` under `tools/list` and `tools/call`
 
-**Detailed Battle Log Output:**
-```
-========================================
-⚔️ BATTLE: CHARIZARD vs BLASTOISE ⚔️
-========================================
+Deliverables (Part 2)
 
-🔵 **CHARIZARD** (#6)
-🔴 **BLASTOISE** (#9)
-
-⚡ **Speed Advantage:** Charizard is faster and will attack first!
-
---- Turn 1 ---
-Charizard: [████████████████████] 78/78 HP
-Blastoise: [████████████████████] 79/79 HP
-
-**Charizard's Turn:**
-   🎯 Charizard used **flamethrower**!
-   🎲 Accuracy Roll: SUCCESS - The attack hits!
-   It's not very effective...
-   💥 Dealt **23 damage**!
-   📉 Blastoise's HP: 79 → 56
-```
-
-#### Advanced Battle Features
-- **Smart AI Move Selection**: Calculates optimal moves based on type effectiveness and status conditions
-- **Comprehensive Battle Logs**: Every action is logged with damage calculations
-- **Status Effect Processing**: End-of-turn effects are properly handled
-- **Battle Outcome Determination**: Clear winner declaration
+- Source code for the battle tool following MCP tool spec: `src/server.ts`, `src/battle/*`
+- This README with dependency install, server start steps, and usage examples
+- Clear instructions to set up and test locally and in Claude Desktop
 
 ---
 
-## Installation & Setup
+## Claude Desktop (Windows) setup
 
-### Prerequisites
-- Node.js (>= 18.0.0)
-- Python (>= 3.6)
-- npm package manager
+1) Build and verify the server
 
-### Installation Steps
-
-1. **Clone the Repository**
-```bash
-git clone <repository-url>
-cd pokemon-battle-mcp-server
+```powershell
+npm install ; npm run build ; npm start
+# Expect in the console: "Pokemon MCP Server is running (stdio)"
 ```
 
-2. **Install Node.js Dependencies**
-```bash
-npm install
+1) Auto-configure Claude Desktop for MCP
+
+```powershell
+npm run configure:claude
 ```
 
-3. **Install Python Dependencies**
-```bash
-pip install -r requirements.txt
+This writes `%APPDATA%\Claude\claude_desktop_config.json` with an entry that points to your absolute Node path and `dist/index.js`.
+
+1) Restart Claude Desktop and test
+
+- Ask: “List available tools” — you should see `simulate_battle` and `natural_command`.
+- Ask: “battle pikachu vs charizard seed 12345 level 50” — you’ll get deterministic results.
+- Ask: “moves bulbasaur” or “stats squirtle”.
+
+Troubleshooting
+
+- If Claude reports “not valid JSON”, ensure all server logs go to stderr (already configured) and that you built with `npm run build`.
+- If tools don’t appear, re-run `npm run configure:claude` and restart Claude.
+
+---
+
+## Project structure
+
+```text
+src/
+ battle/                 # engine, damage, statuses, type chart
+ data/                   # PokeAPI service with caching and evolution
+ utils/                  # rng, logger, llm parsing
+ server.ts               # MCP server (resources + tools)
+ index.ts                # entry point
+ cli.ts                  # optional CLI for natural commands
+tests/                    # jest tests (TypeScript)
+scripts/                  # Windows Claude config helper
 ```
 
-4. **Build the Server**
-```bash
-npm run build
+## Run tests
+
+```powershell
+npm test
 ```
 
-## Usage
+## Notes
 
-### Starting the Intelligent Terminal Client
-```bash
-python terminal_client.py
-```
-
-The client will:
-1. Build a Pokémon knowledge base (one-time setup)
-2. Start the MCP server automatically
-3. Provide an interactive terminal interface
-
-### Natural Language Commands
-
-**Get Pokémon Information:**
-```
-> tell me about dragonite
-> show me the stats for gengar
-> what moves does pikachu learn?
-```
-
-**Simulate Battles:**
-```
-> who would win in a fight, charizard or blastoise?
-> start a battle between pikachu and raichu
-> simulate lugia vs ho-oh
-```
-
-**Type Effectiveness Analysis:**
-```
-> what is psychic weak to?
-> is fighting effective against steel?
-> what resists fire type moves?
-```
-
-### Direct MCP Server Usage
-
-**Start Server Only:**
-```bash
-npm start
-```
-
-**Send JSON-RPC Requests:**
-```bash
-echo '{"jsonrpc":"2.0","method":"tools.call","params":{"name":"get_pokemon","arguments":{"name":"pikachu"}},"id":1}' | node dist/server.js
-```
-
-## API Reference
-
-### MCP Methods Supported
-
-**Initialization:**
-- `initialize` - Initialize MCP connection
-
-**Resources:**
-- `resources.list` - List available resources
-- `resources.read` - Read specific resource data
-
-**Tools:**
-- `tools.list` - List available tools
-- `tools.call` - Execute tool with parameters
-
-### Tool Specifications
-
-**1. get_pokemon**
-- **Input**: `{ "name": "pokemon-name" }`
-- **Output**: Comprehensive Pokémon data with stats, types, abilities, moves, and evolution info
-
-**2. battle_simulate**
-- **Input**: `{ "pokemon1": "name1", "pokemon2": "name2" }`
-- **Output**: Detailed battle simulation log with winner determination
-
-**3. get_type_effectiveness**
-- **Input**: `{ "attacking_type": "fire", "defending_types": ["grass", "water"] }`
-- **Output**: Type effectiveness analysis with multipliers
-
-## Configuration
-
-### Server Configuration (`src/config.ts`)
-```typescript
-export const config = {
-  server: {
-    port: 3000,
-    mcpVersion: "2024-11-05",
-    serverName: "pokemon-battle-mcp-server-pro",
-    serverVersion: "3.0.0"
-  },
-  battle: {
-    defaultLevel: 50,
-    maxTurns: 50,
-    critChance: 1 / 24,
-    critMultiplier: 1.5,
-    stabMultiplier: 1.5
-  }
-};
-```
-
-## Advanced Features
-
-### Intelligent Client Capabilities
-- **Knowledge Base**: Pre-loads all 1300+ Pokémon names for accurate parsing
-- **Natural Language Processing**: Understands intent and extracts entities
-- **Smart Query Orchestration**: Can answer complex questions like "what is psychic weak to?" by testing all type matchups
-- **Asynchronous Operations**: Handles multiple concurrent API calls efficiently
-
-### Battle Engine Features
-- **Accurate Damage Calculation**: Implements official Pokémon damage formulas
-- **Complete Type System**: Full 18-type effectiveness chart
-- **Status Effect System**: 5+ status conditions with proper mechanics
-- **Smart AI**: Calculates optimal moves considering type effectiveness and status
-- **Comprehensive Logging**: Every battle action is recorded with calculations
-
-## File Structure
-```
-pokemon-battle-mcp-server/
-├── src/
-│   ├── config.ts                 # Server configuration
-│   ├── pokemon.types.ts          # Type definitions
-│   ├── server.ts                 # Main MCP server
-│   ├── services/
-│   │   ├── pokeapi.service.ts    # PokeAPI integration
-│   │   └── tool.handler.ts       # Tool implementations
-│   └── tool/
-│       └── battle.service.ts     # Battle simulation engine
-├── terminal_client.py            # Intelligent Python client
-├── package.json                  # Node.js dependencies
-├── requirements.txt              # Python dependencies
-├── tsconfig.json                # TypeScript configuration
-└── README.md                    # This file
-```
-
-## Testing Examples
-
-### Test Pokémon Data Access
-```bash
-# Natural language
-python terminal_client.py
-> tell me about charizard
-
-# Direct MCP call
-echo '{"jsonrpc":"2.0","method":"tools.call","params":{"name":"get_pokemon","arguments":{"name":"charizard"}},"id":1}' | node dist/server.js
-```
-
-### Test Battle Simulation
-```bash
-# Natural language
-python terminal_client.py
-> who would win, pikachu or raichu?
-
-# Direct MCP call
-echo '{"jsonrpc":"2.0","method":"tools.call","params":{"name":"battle_simulate","arguments":{"pokemon1":"pikachu","pokemon2":"raichu"}},"id":1}' | node dist/server.js
-```
-
-### Test Type Effectiveness
-```bash
-# Smart weakness analysis
-python terminal_client.py
-> what is fire weak to?
-
-# Direct type check
-echo '{"jsonrpc":"2.0","method":"tools.call","params":{"name":"get_type_effectiveness","arguments":{"attacking_type":"water","defending_types":["fire"]}},"id":1}' | node dist/server.js
-```
-
-## Technical Highlights
-
-- **Full MCP Compliance**: Implements complete MCP 2024-11-05 specification
-- **Production Ready**: Includes error handling, caching, and configuration management
-- **Scalable Architecture**: Modular design with clear separation of concerns
-- **Rich Data Integration**: Leverages PokeAPI for authentic Pokémon data
-- **Advanced Battle Mechanics**: Implements complex Pokémon battle rules accurately
-- **Intelligent Client**: Natural language understanding with entity recognition
-
-This implementation exceeds the technical assessment requirements by providing both a compliant MCP server and an intelligent client interface that makes Pokémon data and battle simulation accessible through natural language interaction.
+- The server uses stderr for logs to keep MCP stdout pure.
+- You can tune the engine’s move selection pool via `MOVE_POOL_SIZE` env var (default 8).
+- Data is cached at `data/pokemon-data-cache.json` after first fetch.
